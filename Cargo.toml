@@ -21,6 +21,7 @@ diesel_migrations = "1.2.0"
 exitfailure = "0.5.1"
 validator = "0.8.0"
 validator_derive = "0.8.0"
+rand = "0.7"
 
 [dependencies.chrono]
 version = "0.4"

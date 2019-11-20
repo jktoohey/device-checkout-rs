@@ -25,6 +25,7 @@ pub extern crate exitfailure;
 #[macro_use]
 extern crate validator_derive;
 extern crate validator;
+extern crate rand;
 
 pub mod database;
 pub mod models;

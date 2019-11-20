@@ -3,6 +3,7 @@ use failure;
 use models;
 use std;
 use utils;
+use rand::seq::SliceRandom;
 
 use self::diesel::prelude::*;
 use failure::ResultExt;
@@ -64,7 +65,7 @@ pub fn get_device_by_id(
         .next())
 }
 
-///Lookup a single available device from a pool
+///Randomly select a single available device from a pool
 pub fn get_available_device_from_pool(
     _config: &utils::types::Settings,
     database: &DbConn,
@@ -78,8 +79,8 @@ pub fn get_available_device_from_pool(
         )
         .load::<models::Device>(database)
         .with_context(|_| "Error loading devices".to_string())?
-        .into_iter()
-        .next())
+        .choose(&mut rand::thread_rng())
+        .map(|device| device.clone()))
 }
 
 ///Updates a device, designed for the common case on the main http form
