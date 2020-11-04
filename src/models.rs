@@ -86,6 +86,7 @@ pub struct Device {
     Hash,
     Identifiable,
     Queryable,
+    Associations,
     Insertable,
     Serialize,
     Deserialize,

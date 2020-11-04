@@ -24,7 +24,39 @@
 				<strong>Error:</strong> {{error_message}}
 			</div>
 			{{/if}}
-			<table class="table table-bordered" data-toggle="table" data-search="true">
+			{{! dropdown box for pool selection}}
+			<div class="container-fluid" style="margin-bottom: 8px;">
+				<div class="row">
+					<div class="dropdown show pr-2">
+						{{#if current_pool}}
+							<a class="btn btn-light dropdown-toggle" href="#" role="button" id="dropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+								{{current_pool.pool_name}}
+							</a>
+							<div class="dropdown-menu" aria-labelledby="dropdownMenuLink">
+								<a class="dropdown-item" href="/devices">All Devices</a>
+								{{#each pools as |pool|}}
+									{{#unless (eq pool.id ../current_pool.id)}}
+										<a class="dropdown-item" href="/devices/pool/{{pool.id}}">{{pool.pool_name}}</a>
+									{{/unless}}
+								{{/each}}
+							</div>
+						{{else}}
+							<a class="btn btn-light dropdown-toggle" href="#" role="button" id="dropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+								All Devices
+							</a>
+							<div class="dropdown-menu" aria-labelledby="dropdownMenuLink">
+								{{#each ../pools as |pool|}}
+									<a class="dropdown-item" href="/devices/pool/{{pool.id}}">{{pool.pool_name}}</a>
+								{{/each}}
+							</div>
+						{{/if}}
+					</div>
+
+					<input type="text" id="search-input" placeholder="Search Devices">
+				</div>
+			</div>
+			{{! table of devices}}
+			<table class="table table-bordered" data-toggle="table" data-search="true" data-search-selector="#search-input">
 				<thead class="thead-dark">
 					<tr>
 						<th>Device name</th>

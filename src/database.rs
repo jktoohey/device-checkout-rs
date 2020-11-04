@@ -147,3 +147,15 @@ pub fn get_pools(
         .load::<models::Pool>(database)
         .with_context(|_| "Error loading pools".to_string())?)
 }
+
+///Get a pool
+pub fn get_pool_by_id(
+    _config: &utils::types::Settings,
+    database: &DbConn,
+    requested_id: i32,
+) -> Result<models::Pool, failure::Error> {
+    Ok(pools
+        .find(requested_id)
+        .first::<models::Pool>(database)
+        .expect("Error loading pool"))
+}
