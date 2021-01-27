@@ -36,7 +36,7 @@
 								<a class="dropdown-item" href="/devices">All Devices</a>
 								{{#each pools as |pool|}}
 									{{#unless (eq pool.id ../current_pool.id)}}
-										<a class="dropdown-item" href="/devices/pool/{{pool.id}}">{{pool.pool_name}}</a>
+										<a class="dropdown-item" href="/devices?pool_id={{pool.id}}">{{pool.pool_name}}</a>
 									{{/unless}}
 								{{/each}}
 							</div>
@@ -46,7 +46,7 @@
 							</a>
 							<div class="dropdown-menu" aria-labelledby="dropdownMenuLink">
 								{{#each ../pools as |pool|}}
-									<a class="dropdown-item" href="/devices/pool/{{pool.id}}">{{pool.pool_name}}</a>
+									<a class="dropdown-item" href="/devices?pool_id={{pool.id}}">{{pool.pool_name}}</a>
 								{{/each}}
 							</div>
 						{{/if}}

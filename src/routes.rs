@@ -17,7 +17,6 @@ pub fn html_routes() -> Vec<rocket::Route> {
     routes![
         self::index,
         self::get_devices,
-        self::get_devices_by_pool,
         self::post_devices,
         self::get_edit_devices,
         self::post_edit_devices,
@@ -162,17 +161,7 @@ struct PerDeviceContext {
 struct DevicesContext<'a> {
     devices: Vec<PerDeviceContext>,
     pools: Vec<models::Pool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error_message: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    success_message: Option<&'a str>,
-}
-
-#[derive(Serialize)]
-struct DevicesByPoolContext<'a> {
-    devices: Vec<PerDeviceContext>,
-    pools: Vec<models::Pool>,
-    current_pool: models::Pool,
+    current_pool: Option<models::Pool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error_message: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -199,6 +188,7 @@ fn gen_device_context<'a>(
     config: &utils::types::Settings,
     database: &database::DbConn,
     status_message: &'a Option<rocket::request::FlashMessage>,
+    requested_pool_id: Option<i32>,
 ) -> Result<DevicesContext<'a>, failure::Error> {
     trace!("gen_device_context");
 
@@ -213,51 +203,21 @@ fn gen_device_context<'a>(
         }
     }
 
-    let devices: Vec<_> = database::get_devices(config, database)?
-        .into_iter()
+    let pools: Vec<_> = database::get_pools(config, database)?;
+    let unformatted_devices: Vec<_>;
+    let current_pool: Option<models::Pool>;
+    if let Some(pool_id) = requested_pool_id {
+        unformatted_devices = database::get_devices_in_pool(config, database, pool_id)?;
+        current_pool = Some(database::get_pool_by_id(config, database, pool_id)?);
+    } else {
+        unformatted_devices = database::get_devices(config, database)?;
+        current_pool = None;
+    };
+    let devices = unformatted_devices.into_iter()
         .map(format_device)
         .collect();
-
-    let pools: Vec<_> = database::get_pools(config, database)?;
 
     Ok(DevicesContext {
-        devices,
-        pools,
-        error_message,
-        success_message,
-    })
-}
-
-fn gen_device_by_pool_context<'a>(
-    config: &utils::types::Settings,
-    database: &database::DbConn,
-    status_message: &'a Option<rocket::request::FlashMessage>,
-    requested_pool_id: i32,
-) -> Result<DevicesByPoolContext<'a>, failure::Error> {
-    trace!("gen_device_by_pool_context");
-
-    let mut success_message = None;
-    let mut error_message = None;
-
-    if let Some(ref status_message) = *status_message {
-        if status_message.name() == "success" {
-            success_message = Some(status_message.msg());
-        } else {
-            error_message = Some(status_message.msg());
-        }
-    }
-
-    let devices: Vec<_> = database::get_devices(config, database)?
-        .into_iter()
-        .filter(|pool| pool.pool_id == requested_pool_id)
-        .map(format_device)
-        .collect();
-
-    let pools: Vec<_> = database::get_pools(config, database)?;
-
-    let current_pool = database::get_pool_by_id(config, database, requested_pool_id)?;
-
-    Ok(DevicesByPoolContext {
         devices,
         pools,
         current_pool,
@@ -267,31 +227,16 @@ fn gen_device_by_pool_context<'a>(
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
-#[get("/devices")]
+#[get("/devices?<pool_id>")]
 pub fn get_devices(
     config: rocket::State<utils::types::Settings>,
     database: pool::DbConn,
     status_message: Option<rocket::request::FlashMessage>,
+    pool_id: Option<i32>,
 ) -> Result<rocket_contrib::templates::Template, failure::Error> {
     trace!("get_devices()");
 
-    let context = gen_device_context(&*config, &*database, &status_message)?;
-    Ok(rocket_contrib::templates::Template::render(
-        "devices", &context,
-    ))
-}
-
-#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
-#[get("/devices/pool/<pool_id>")]
-pub fn get_devices_by_pool(
-    config: rocket::State<utils::types::Settings>,
-    database: pool::DbConn,
-    pool_id: i32,
-    status_message: Option<rocket::request::FlashMessage>,
-) -> Result<rocket_contrib::templates::Template, failure::Error> {
-    trace!("get_devices_by_pool()");
-
-    let context = gen_device_by_pool_context(&*config, &*database, &status_message, pool_id)?;
+    let context = gen_device_context(&*config, &*database, &status_message, pool_id)?;
     Ok(rocket_contrib::templates::Template::render(
         "devices", &context,
     ))
@@ -306,7 +251,7 @@ pub fn get_edit_devices(
 ) -> Result<rocket_contrib::templates::Template, failure::Error> {
     trace!("get_edit_devices()");
 
-    let context = gen_device_context(&*config, &*database, &status_message)?;
+    let context = gen_device_context(&*config, &*database, &status_message, None)?;
     Ok(rocket_contrib::templates::Template::render(
         "edit_devices",
         &context,

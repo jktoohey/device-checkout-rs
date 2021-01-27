@@ -37,6 +37,18 @@ pub fn get_devices(
         .with_context(|_| "Error loading devices".to_string())?)
 }
 
+///Get all the devices in a pool
+pub fn get_devices_in_pool(
+    _config: &utils::types::Settings,
+    database: &DbConn,
+    requested_pool_id: i32,
+) -> Result<Vec<models::Device>, failure::Error> {
+    Ok(devices
+        .filter(pool_id.eq(requested_pool_id))
+        .load::<models::Device>(database)
+        .with_context(|_| "Error loading devices".to_string())?)
+}
+
 ///Lookup a single device
 pub fn get_device(
     _config: &utils::types::Settings,
@@ -157,5 +169,5 @@ pub fn get_pool_by_id(
     Ok(pools
         .find(requested_id)
         .first::<models::Pool>(database)
-        .expect("Error loading pool"))
+        .with_context(|_| "Error loading pool".to_string())?)
 }
