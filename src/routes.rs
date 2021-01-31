@@ -29,6 +29,7 @@ pub fn api_routes() -> Vec<rocket::Route> {
     routes![
         self::api_get_device,
         self::api_get_devices,
+        self::api_get_pools,
         self::api_post_reservations,
         self::api_delete_reservation,
     ]
@@ -75,6 +76,17 @@ pub fn api_get_devices(
     trace!("api_get_devices()");
     let devices = database::get_devices(&*config, &*database)?;
     Ok(rocket_contrib::json::Json(devices))
+}
+
+#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#[get("/pools")]
+pub fn api_get_pools(
+    config: rocket::State<utils::types::Settings>,
+    database: pool::DbConn,
+) -> Result<rocket_contrib::json::Json<Vec<models::Pool>>, failure::Error> {
+    trace!("api_get_pools()");
+    let pools = database::get_pools(&*config, &*database)?;
+    Ok(rocket_contrib::json::Json(pools))
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
