@@ -5,7 +5,7 @@ table! {
         device_url -> Nullable<Text>,
         device_owner -> Nullable<Text>,
         comments -> Nullable<Text>,
-        reservation_status -> ::models::ReservationStatusMapping,
+        reservation_status -> crate::models::ReservationStatusMapping,
         created_at -> Timestamp,
         updated_at -> Timestamp,
         pool_id -> Integer,

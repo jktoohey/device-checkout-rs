@@ -1,4 +1,4 @@
-extern crate assert_cli;
+use assert_cli;
 
 //kcov doesn't play nice with assert_cli() see
 //https://github.com/assert-rs/assert_cli/issues/101

@@ -2,14 +2,13 @@
 
 use chrono;
 use chrono::Offset;
-use database;
+use crate::database;
 use failure;
-use models;
-use pool;
-use rocket;
+use crate::models;
+use crate::pool;
 use rocket_contrib;
 use std;
-use utils;
+use crate::utils;
 use validator;
 use validator::Validate;
 
@@ -44,7 +43,7 @@ pub fn index() -> rocket::response::Redirect {
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/devices/<name>")]
 pub fn api_get_device(
-    config: rocket::State<utils::types::Settings>,
+    config: rocket::State<'_, utils::types::Settings>,
     database: pool::DbConn,
     name: String,
 ) -> Result<rocket_contrib::json::Json<models::Device>, rocket::response::status::Custom<String>> {
@@ -70,7 +69,7 @@ pub fn api_get_device(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/devices")]
 pub fn api_get_devices(
-    config: rocket::State<utils::types::Settings>,
+    config: rocket::State<'_, utils::types::Settings>,
     database: pool::DbConn,
 ) -> Result<rocket_contrib::json::Json<Vec<models::Device>>, failure::Error> {
     trace!("api_get_devices()");
@@ -81,7 +80,7 @@ pub fn api_get_devices(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/pools")]
 pub fn api_get_pools(
-    config: rocket::State<utils::types::Settings>,
+    config: rocket::State<'_, utils::types::Settings>,
     database: pool::DbConn,
 ) -> Result<rocket_contrib::json::Json<Vec<models::Pool>>, failure::Error> {
     trace!("api_get_pools()");
@@ -92,7 +91,7 @@ pub fn api_get_pools(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/reservations", format = "application/json", data = "<reservation>")]
 pub fn api_post_reservations(
-    config: rocket::State<utils::types::Settings>,
+    config: rocket::State<'_, utils::types::Settings>,
     database: pool::DbConn,
     reservation: rocket_contrib::json::Json<models::ReservationRequest>,
 ) -> Result<rocket_contrib::json::Json<models::Reservation>, rocket::http::Status> {
@@ -132,7 +131,7 @@ pub fn api_post_reservations(
 
 #[delete("/reservations/<id>")]
 pub fn api_delete_reservation(
-    config: rocket::State<utils::types::Settings>,
+    config: rocket::State<'_, utils::types::Settings>,
     database: pool::DbConn,
     id: i32,
 ) -> rocket::http::Status {
@@ -199,7 +198,7 @@ fn format_device(device: models::Device) -> PerDeviceContext {
 fn gen_device_context<'a>(
     config: &utils::types::Settings,
     database: &database::DbConn,
-    status_message: &'a Option<rocket::request::FlashMessage>,
+    status_message: &'a Option<rocket::request::FlashMessage<'_, '_>>,
     requested_pool_id: Option<i32>,
 ) -> Result<DevicesContext<'a>, failure::Error> {
     trace!("gen_device_context");
@@ -241,9 +240,9 @@ fn gen_device_context<'a>(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/devices?<pool_id>")]
 pub fn get_devices(
-    config: rocket::State<utils::types::Settings>,
+    config: rocket::State<'_, utils::types::Settings>,
     database: pool::DbConn,
-    status_message: Option<rocket::request::FlashMessage>,
+    status_message: Option<rocket::request::FlashMessage<'_, '_>>,
     pool_id: Option<i32>,
 ) -> Result<rocket_contrib::templates::Template, failure::Error> {
     trace!("get_devices()");
@@ -257,9 +256,9 @@ pub fn get_devices(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/editDevices")]
 pub fn get_edit_devices(
-    config: rocket::State<utils::types::Settings>,
+    config: rocket::State<'_, utils::types::Settings>,
     database: pool::DbConn,
-    status_message: Option<rocket::request::FlashMessage>,
+    status_message: Option<rocket::request::FlashMessage<'_, '_>>,
 ) -> Result<rocket_contrib::templates::Template, failure::Error> {
     trace!("get_edit_devices()");
 
@@ -273,11 +272,11 @@ pub fn get_edit_devices(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/addDevices", data = "<device_add>")]
 pub fn post_add_devices(
-    config: rocket::State<utils::types::Settings>,
+    config: rocket::State<'_, utils::types::Settings>,
     database: pool::DbConn,
     device_add: Result<
         rocket::request::LenientForm<models::DeviceInsert>,
-        rocket::request::FormError,
+        rocket::request::FormError<'_>,
     >,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_add_devices()");
@@ -318,11 +317,11 @@ pub fn post_add_devices(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/deleteDevices", data = "<device_edit>")]
 pub fn post_delete_devices(
-    config: rocket::State<utils::types::Settings>,
+    config: rocket::State<'_, utils::types::Settings>,
     database: pool::DbConn,
     device_edit: Result<
         rocket::request::LenientForm<models::DeviceDelete>,
-        rocket::request::FormError,
+        rocket::request::FormError<'_>,
     >,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_delete_devices()");
@@ -352,11 +351,11 @@ pub fn post_delete_devices(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/editDevices", data = "<device_edit>")]
 pub fn post_edit_devices(
-    config: rocket::State<utils::types::Settings>,
+    config: rocket::State<'_, utils::types::Settings>,
     database: pool::DbConn,
     device_edit: Result<
         rocket::request::LenientForm<models::DeviceEdit>,
-        rocket::request::FormError,
+        rocket::request::FormError<'_>,
     >,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_edit_devices()");
@@ -397,9 +396,9 @@ pub fn post_edit_devices(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/devices", data = "<device_update>")]
 pub fn post_devices(
-    config: rocket::State<utils::types::Settings>,
+    config: rocket::State<'_, utils::types::Settings>,
     database: pool::DbConn,
-    device_update: Result<rocket::request::Form<models::DeviceUpdate>, rocket::request::FormError>,
+    device_update: Result<rocket::request::Form<models::DeviceUpdate>, rocket::request::FormError<'_>>,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_devices()");
 

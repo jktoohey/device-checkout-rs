@@ -1,6 +1,6 @@
 use chrono;
 use rocket;
-use schema::*;
+use crate::schema::*;
 use std;
 use validator::{Validate, ValidationError};
 

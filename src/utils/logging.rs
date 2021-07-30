@@ -1,5 +1,5 @@
 use stderrlog;
-use utils::types;
+use crate::utils::types;
 
 ///This sets up logging, and takes the output from the commandline
 ///options

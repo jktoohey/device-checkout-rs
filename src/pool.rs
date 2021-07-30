@@ -1,6 +1,6 @@
 use diesel;
 use rocket;
-use utils;
+use crate::utils;
 
 use rocket::request::FromRequest;
 use std::ops::Deref;
@@ -35,7 +35,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for DbConn {
         request: &'a rocket::request::Request<'r>,
     ) -> rocket::request::Outcome<Self, Self::Error> {
         let pool = request.guard::<rocket::State<
-            diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<diesel::sqlite::SqliteConnection>>,
+            '_, diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<diesel::sqlite::SqliteConnection>>,
         >>()?;
         match pool.get() {
             Ok(conn) => rocket::Outcome::Success(DbConn(conn)),

@@ -1,5 +1,5 @@
 use clap;
-use utils::types;
+use crate::utils::types;
 
 pub fn parse_cmdline() -> types::Settings {
     let matches = matcher().get_matches();
@@ -9,7 +9,7 @@ pub fn parse_cmdline() -> types::Settings {
     }
 }
 
-fn parse(matches: &clap::ArgMatches) -> Result<types::Settings, clap::Error> {
+fn parse(matches: &clap::ArgMatches<'_>) -> Result<types::Settings, clap::Error> {
     let verbosity = matches.occurrences_of("verbosity") as usize;
     if verbosity > 4 {
         Err(clap::Error {

@@ -3,6 +3,7 @@ name = "device-checkout-lib"
 version = "0.2.3"
 authors = ["Toby Smith <toby@tismith.id.au>"]
 license = "MIT"
+edition = "2018"
 
 [profile.release]
 lto = true

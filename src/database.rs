@@ -1,15 +1,15 @@
 use diesel;
 use failure;
-use models;
+use crate::models;
 use std;
-use utils;
+use crate::utils;
 use rand::seq::SliceRandom;
 
 use self::diesel::prelude::*;
 use failure::ResultExt;
-use schema::devices;
-use schema::devices::dsl::*;
-use schema::pools::dsl::pools;
+use crate::schema::devices;
+use crate::schema::devices::dsl::*;
+use crate::schema::pools::dsl::pools;
 
 pub type DbConn = diesel::sqlite::SqliteConnection;
 

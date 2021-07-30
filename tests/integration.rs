@@ -1,8 +1,8 @@
-extern crate device_checkout_lib;
+
 use device_checkout_lib::*;
 
-extern crate tempfile;
-extern crate victoria_dom;
+use tempfile;
+use victoria_dom;
 
 #[test]
 fn test_api_get_device() {
@@ -163,7 +163,7 @@ fn test_html_get_edit_devices() {
         .expect("failed to find unit2");
 }
 
-fn get_cookies(response: &rocket::local::LocalResponse) -> Vec<rocket::http::Cookie<'static>> {
+fn get_cookies(response: &rocket::local::LocalResponse<'_>) -> Vec<rocket::http::Cookie<'static>> {
     let mut cookies = Vec::new();
     for header in response.headers().get("Set-Cookie") {
         if let Ok(cookie) = rocket::http::Cookie::parse_encoded(header) {
@@ -173,7 +173,7 @@ fn get_cookies(response: &rocket::local::LocalResponse) -> Vec<rocket::http::Coo
     cookies
 }
 
-fn get_redirect(response: &rocket::local::LocalResponse) -> Option<String> {
+fn get_redirect(response: &rocket::local::LocalResponse<'_>) -> Option<String> {
     if response.status() == rocket::http::Status::SeeOther {
         response
             .headers()
@@ -187,7 +187,7 @@ fn get_redirect(response: &rocket::local::LocalResponse) -> Option<String> {
 
 fn follow_redirect<'a>(
     client: &'a rocket::local::Client,
-    response: &rocket::local::LocalResponse,
+    response: &rocket::local::LocalResponse<'_>,
 ) -> Option<rocket::local::LocalResponse<'a>> {
     let cookies = get_cookies(&response);
     let location = match get_redirect(&response) {
