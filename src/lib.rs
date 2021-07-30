@@ -1,4 +1,4 @@
-#![feature(plugin, proc_macro_hygiene, decl_macro, custom_attribute)]
+#![feature(plugin, proc_macro_hygiene, decl_macro)]
 
 //#[macro_use] //this crate has macros, currently unused
 pub use failure;

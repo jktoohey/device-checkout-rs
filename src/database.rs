@@ -1,4 +1,5 @@
 use diesel;
+use diesel::sql_types::{Nullable, Text};
 use failure;
 use crate::models;
 use std;
@@ -10,10 +11,14 @@ use failure::ResultExt;
 use crate::schema::devices;
 use crate::schema::devices::dsl::*;
 use crate::schema::pools::dsl::pools;
+use crate::schema::custom_owners;
 
 pub type DbConn = diesel::sqlite::SqliteConnection;
 
 embed_migrations!();
+
+// define SQL function lower to return lowercase of column
+sql_function!(fn lower(x: Nullable<Text>) -> Nullable<Text>);
 
 pub fn run_migrations(config: &utils::types::Settings) -> Result<(), failure::Error> {
     let connection = establish_connection(config)?;
@@ -21,7 +26,7 @@ pub fn run_migrations(config: &utils::types::Settings) -> Result<(), failure::Er
     Ok(())
 }
 
-fn establish_connection(config: &utils::types::Settings) -> Result<DbConn, failure::Error> {
+pub fn establish_connection(config: &utils::types::Settings) -> Result<DbConn, failure::Error> {
     trace!("establish_connection()");
     Ok(DbConn::establish(&config.database_url)
         .with_context(|_| format!("Error connection to {}", &config.database_url))?)
@@ -45,6 +50,18 @@ pub fn get_devices_in_pool(
 ) -> Result<Vec<models::Device>, failure::Error> {
     Ok(devices
         .filter(pool_id.eq(requested_pool_id))
+        .load::<models::Device>(database)
+        .with_context(|_| "Error loading devices".to_string())?)
+}
+
+///Get devices reserved by owner name
+pub fn get_devices_by_owner(
+    _config: &utils::types::Settings,
+    database: &DbConn,
+    requested_owner: &str,
+) -> Result<Vec<models::Device>, failure::Error> {
+    Ok(devices
+        .filter(lower(device_owner).eq(requested_owner.to_lowercase()))
         .load::<models::Device>(database)
         .with_context(|_| "Error loading devices".to_string())?)
 }
@@ -170,4 +187,81 @@ pub fn get_pool_by_id(
         .find(requested_id)
         .first::<models::Pool>(database)
         .with_context(|_| "Error loading pool".to_string())?)
+}
+
+// custom owners (exceptions)
+///Get all the custom_owners
+pub fn get_custom_owners(
+    _config: &utils::types::Settings,
+    database: &DbConn,
+) -> Result<Vec<models::CustomOwner>, failure::Error> {
+    Ok(custom_owners::dsl::custom_owners
+        .load::<models::CustomOwner>(database)
+        .with_context(|_| "Error loading custom_owners".to_string())?)
+}
+
+///Lookup a single custom_owner
+pub fn get_custom_owner(
+    _config: &utils::types::Settings,
+    database: &DbConn,
+    requested_name: &str,
+) -> Result<Option<models::CustomOwner>, failure::Error> {
+    Ok(custom_owners::table
+        .filter(custom_owners::custom_owner_name.eq(requested_name.to_lowercase()))
+        .load::<models::CustomOwner>(database)
+        .with_context(|_| "Error loading custom_owners".to_string())?
+        .into_iter()
+        .next())
+}
+
+///Lookup a single custom_owner by id
+pub fn get_custom_owner_by_id(
+    _config: &utils::types::Settings,
+    database: &DbConn,
+    requested_id: i32,
+) -> Result<Option<models::CustomOwner>, failure::Error> {
+    Ok(custom_owners::table
+        .filter(custom_owners::id.eq(requested_id))
+        .load::<models::CustomOwner>(database)
+        .with_context(|_| "Error loading custom_owners".to_string())?
+        .into_iter()
+        .next())
+}
+
+///Edits the details specific to the custom_owner, e.g. the name and channel
+pub fn edit_custom_owner(
+    _config: &utils::types::Settings,
+    database: &DbConn,
+    custom_owner_edit: &models::CustomOwnerModify,
+) -> Result<usize, failure::Error> {
+    Ok(diesel::update(custom_owners::table
+        .filter(custom_owners::id.eq(&custom_owner_edit.id)))
+        .set((
+            custom_owners::custom_owner_name.eq(&custom_owner_edit.custom_owner_name),
+            custom_owners::recipient.eq(&custom_owner_edit.recipient),
+            custom_owners::description.eq(&custom_owner_edit.description),
+        ))
+        .execute(database)?)
+}
+
+///Remove the custom_owner from the database
+pub fn delete_custom_owner(
+    _config: &utils::types::Settings,
+    database: &DbConn,
+    custom_owner_delete: &models::CustomOwnerDelete,
+) -> Result<usize, failure::Error> {
+    Ok(diesel::delete(custom_owners::table
+        .filter(custom_owners::id.eq(&custom_owner_delete.id)))
+        .execute(database)?)
+}
+
+///Inserts a new custom_owner - must have valid slack channel associated.
+pub fn insert_custom_owner(
+    _config: &utils::types::Settings,
+    database: &DbConn,
+    custom_owner_insert: &models::CustomOwnerInsert,
+) -> Result<usize, failure::Error> {
+    Ok(diesel::insert_into(custom_owners::table)
+        .values(custom_owner_insert)
+        .execute(database)?)
 }

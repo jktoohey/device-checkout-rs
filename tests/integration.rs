@@ -60,6 +60,89 @@ fn test_api_get_pools() {
 }
 
 #[test]
+fn test_api_get_custom_owner() {
+    let file = tempfile::NamedTempFile::new().expect("creating tempfile");
+    let mut config = utils::types::Settings::new();
+    config.database_url = file.path().to_string_lossy().to_owned().to_string();
+
+    database::run_migrations(&config).expect("running migrations");
+
+    // Add custom owner record
+    let rocket = routes::rocket(config).expect("creating rocket instance");
+    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    client.post("/addCustomOwners")
+    .header(rocket::http::ContentType(rocket::http::MediaType::Form))
+    .body(r#"custom_owner_name=Custom1&recipient=SlackUser&description=custom%20owner%20mapping%201"#)
+    .dispatch();
+
+    let mut response = client.get("/api/custom_owners/custom1").dispatch();
+    assert_eq!(response.status(), rocket::http::Status::Ok);
+    let body = response.body_string().unwrap();
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["id"], 1);
+    assert_eq!(v["custom_owner_name"], "custom1");
+    assert_eq!(v["recipient"], "slackuser");
+    assert_eq!(v["description"], "custom owner mapping 1");
+
+    // assert request is not case-sensitive
+    let mut response = client.get("/api/custom_owners/CUSTOM1").dispatch();
+    assert_eq!(response.status(), rocket::http::Status::Ok);
+    let body = response.body_string().unwrap();
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["id"], 1);
+    assert_eq!(v["custom_owner_name"], "custom1");
+    assert_eq!(v["recipient"], "slackuser");
+    assert_eq!(v["description"], "custom owner mapping 1");
+
+    let response = client.get("/api/custom_owners/invalid").dispatch();
+    assert_eq!(response.status(), rocket::http::Status::NotFound);
+}
+
+#[test]
+fn test_api_get_custom_owners() {
+    let file = tempfile::NamedTempFile::new().expect("creating tempfile");
+    let mut config = utils::types::Settings::new();
+    config.database_url = file.path().to_string_lossy().to_owned().to_string();
+
+    database::run_migrations(&config).expect("running migrations");
+
+    // Add custom owner records
+    let rocket = routes::rocket(config).expect("creating rocket instance");
+    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    client.post("/addCustomOwners")
+    .header(rocket::http::ContentType(rocket::http::MediaType::Form))
+    .body(r#"custom_owner_name=Custom1&recipient=SlackUser&description=custom%20owner%20mapping%201"#)
+    .dispatch();
+
+    client.post("/addCustomOwners")
+    .header(rocket::http::ContentType(rocket::http::MediaType::Form))
+    .body(r#"custom_owner_name=Custom2&recipient=SlackChannel&description=custom%20owner%20mapping%202"#)
+    .dispatch();
+
+    client.post("/addCustomOwners")
+    .header(rocket::http::ContentType(rocket::http::MediaType::Form))
+    .body(r#"custom_owner_name=Custom3&recipient=None&description="#)
+    .dispatch();
+
+    let mut response = client.get("/api/custom_owners").dispatch();
+    assert_eq!(response.status(), rocket::http::Status::Ok);
+    let body = response.body_string().unwrap();
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v[0]["id"], 1);
+    assert_eq!(v[0]["custom_owner_name"], "custom1");
+    assert_eq!(v[0]["recipient"], "slackuser");
+    assert_eq!(v[0]["description"], "custom owner mapping 1");
+    assert_eq!(v[1]["id"], 2);
+    assert_eq!(v[1]["custom_owner_name"], "custom2");
+    assert_eq!(v[1]["recipient"], "slackchannel");
+    assert_eq!(v[1]["description"], "custom owner mapping 2");
+    assert_eq!(v[2]["id"], 3);
+    assert_eq!(v[2]["custom_owner_name"], "custom3");
+    assert_eq!(v[2]["recipient"], "none");
+    assert_eq!(v[2]["description"], "");
+}
+
+#[test]
 fn test_api_delete_reservation() {
     let file = tempfile::NamedTempFile::new().expect("creating tempfile");
     let mut config = utils::types::Settings::new();

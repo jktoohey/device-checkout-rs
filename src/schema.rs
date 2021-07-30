@@ -24,3 +24,14 @@ table! {
 joinable!(devices -> pools (pool_id));
 
 allow_tables_to_appear_in_same_query!(devices, pools,);
+
+table! {
+    custom_owners (id) {
+        id -> Integer,
+        custom_owner_name -> Text,
+        recipient -> Text,
+        description -> Nullable<Text>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}

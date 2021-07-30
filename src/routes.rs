@@ -21,6 +21,10 @@ pub fn html_routes() -> Vec<rocket::Route> {
         self::post_edit_devices,
         self::post_add_devices,
         self::post_delete_devices,
+        self::get_edit_custom_owners,
+        self::post_edit_custom_owners,
+        self::post_add_custom_owners,
+        self::post_delete_custom_owners,
     ]
 }
 
@@ -29,6 +33,8 @@ pub fn api_routes() -> Vec<rocket::Route> {
         self::api_get_device,
         self::api_get_devices,
         self::api_get_pools,
+        self::api_get_custom_owner,
+        self::api_get_custom_owners,
         self::api_post_reservations,
         self::api_delete_reservation,
     ]
@@ -442,6 +448,262 @@ pub fn post_devices(
         _ => rocket::response::Flash::success(
             rocket::response::Redirect::to("/devices"),
             "Successfully updated device",
+        ),
+    }
+}
+
+// customOwners (Exceptions)
+
+#[derive(Serialize)]
+struct PerCustomOwnerContext {
+    custom_owner: models::CustomOwner,
+    updated_at_local: String,
+}
+
+#[derive(Serialize, Default)]
+struct CustomOwnerContext<'a> {
+    custom_owners: Vec<PerCustomOwnerContext>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_message: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    success_message: Option<&'a str>,
+}
+
+fn format_custom_owner(custom_owner: models::CustomOwner) -> PerCustomOwnerContext {
+    let updated_at_local = chrono::DateTime::<chrono::Local>::from_utc(
+        custom_owner.updated_at,
+        chrono::Local::now().offset().fix(),
+    );
+    trace!("format_custom_owner");
+
+    let updated_at_local = format!("{}", updated_at_local.format("%F %r"));
+    PerCustomOwnerContext {
+        custom_owner,
+        updated_at_local,
+    }
+}
+
+fn gen_custom_owner_context<'a>(
+    config: &utils::types::Settings,
+    database: &database::DbConn,
+    status_message: &'a Option<rocket::request::FlashMessage<'_, '_>>,
+) -> Result<CustomOwnerContext<'a>, failure::Error> {
+    trace!("gen_custom_owner_context");
+
+    let mut success_message = None;
+    let mut error_message = None;
+
+    if let Some(ref status_message) = *status_message {
+        if status_message.name() == "success" {
+            success_message = Some(status_message.msg());
+        } else {
+            error_message = Some(status_message.msg());
+        }
+    }
+
+    let unformatted_custom_owners = database::get_custom_owners(config, database)?;
+
+    let custom_owners = unformatted_custom_owners.into_iter()
+        .map(format_custom_owner)
+        .collect();
+
+    Ok(CustomOwnerContext {
+        custom_owners,
+        error_message,
+        success_message,
+    })
+}
+
+
+#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#[get("/custom_owners/<name>")]
+pub fn api_get_custom_owner(
+    config: rocket::State<'_, utils::types::Settings>,
+    database: pool::DbConn,
+    name: String,
+) -> Result<rocket_contrib::json::Json<models::CustomOwner>, rocket::response::status::Custom<String>> {
+    trace!("api_get_custom_owner()");
+    database::get_custom_owner(&*config, &*database, &name)
+        .map_err(|_| {
+            rocket::response::status::Custom(
+                rocket::http::Status::InternalServerError,
+                "500 Internal Server Error".to_string(),
+            )
+        })
+        .and_then(|custom_owners| {
+            custom_owners.ok_or_else(|| {
+                rocket::response::status::Custom(
+                    rocket::http::Status::NotFound,
+                    "404 Not Found".to_string(),
+                )
+            })
+        })
+        .map(rocket_contrib::json::Json)
+}
+
+#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#[get("/custom_owners")]
+pub fn api_get_custom_owners(
+    config: rocket::State<'_, utils::types::Settings>,
+    database: pool::DbConn,
+) -> Result<rocket_contrib::json::Json<Vec<models::CustomOwner>>, failure::Error> {
+    trace!("api_get_custom_owners()");
+    let custom_owners = database::get_custom_owners(&*config, &*database)?;
+    Ok(rocket_contrib::json::Json(custom_owners))
+}
+
+#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#[get("/editCustomOwners")]
+pub fn get_edit_custom_owners(
+    config: rocket::State<'_, utils::types::Settings>,
+    database: pool::DbConn,
+    status_message: Option<rocket::request::FlashMessage<'_, '_>>,
+) -> Result<rocket_contrib::templates::Template, failure::Error> {
+    trace!("get_edit_custom_owners()");
+
+    let context = gen_custom_owner_context(&*config, &*database, &status_message)?;
+    Ok(rocket_contrib::templates::Template::render(
+        "edit_custom_owners",
+        &context,
+    ))
+}
+
+#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#[post("/addCustomOwners", data = "<custom_owner_add>")]
+pub fn post_add_custom_owners(
+    config: rocket::State<'_, utils::types::Settings>,
+    database: pool::DbConn,
+    custom_owner_add: Result<
+        rocket::request::LenientForm<models::CustomOwnerInsert>,
+        rocket::request::FormError<'_>,
+    >,
+) -> rocket::response::Flash<rocket::response::Redirect> {
+    trace!("post_add_custom_owners()");
+
+    let add_result = if let Ok(custom_owner_add) = custom_owner_add {
+        let mut custom_owner = custom_owner_add.into_inner();
+        custom_owner.custom_owner_name = custom_owner.custom_owner_name.to_lowercase();
+        custom_owner.recipient = custom_owner.recipient.to_lowercase();
+        debug!("custom_owner: {:?}", custom_owner);
+        if let Err(errors) = custom_owner.validate() {
+            let errors = errors.field_errors();
+            let msg = match find_first_validation_message(&errors) {
+                Some(m) => m,
+                None => "Failed to parse form data",
+            };
+            return rocket::response::Flash::error(
+                rocket::response::Redirect::to("/editCustomOwners"),
+                msg,
+            );
+        }
+        database::insert_custom_owner(&*config, &*database, &custom_owner)
+    } else {
+        return rocket::response::Flash::error(
+            rocket::response::Redirect::to("/editCustomOwners"),
+            "Failed to parse form data",
+        );
+    };
+
+    match add_result {
+        Ok(0) | Err(_) => rocket::response::Flash::error(
+            rocket::response::Redirect::to("/editCustomOwners"),
+            "Failed to add custom_owner",
+        ),
+        _ => rocket::response::Flash::success(
+            rocket::response::Redirect::to("/editCustomOwners"),
+            "Successfully added custom_owner",
+        ),
+    }
+}
+
+#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#[post("/deleteCustomOwners", data = "<custom_owner_edit>")]
+pub fn post_delete_custom_owners(
+    config: rocket::State<'_, utils::types::Settings>,
+    database: pool::DbConn,
+    custom_owner_edit: Result<
+        rocket::request::LenientForm<models::CustomOwnerDelete>,
+        rocket::request::FormError<'_>,
+    >,
+) -> rocket::response::Flash<rocket::response::Redirect> {
+    trace!("post_delete_custom_owners()");
+
+    let update_result: Result<_, failure::Error> = if let Ok(custom_owner_edit) = custom_owner_edit {
+        let custom_owner = custom_owner_edit.into_inner();
+        if let Err(errors) = custom_owner.validate() {
+            let errors = errors.field_errors();
+            let msg = match find_first_validation_message(&errors) {
+                Some(m) => m,
+                None => "Failed to parse form data",
+            };
+            return rocket::response::Flash::error(
+                rocket::response::Redirect::to("/editCustomOwners"),
+                msg,
+            );
+        }
+        database::delete_custom_owner(&*config, &*database, &custom_owner)
+    } else {
+        return rocket::response::Flash::error(
+            rocket::response::Redirect::to("/editCustomOwners"),
+            "Failed to parse form data",
+        );
+    };
+
+    match update_result {
+        Ok(0) | Err(_) => rocket::response::Flash::error(
+            rocket::response::Redirect::to("/editCustomOwners"),
+            "Failed to delete custom_owner",
+        ),
+        _ => rocket::response::Flash::success(
+            rocket::response::Redirect::to("/editCustomOwners"),
+            "Successfully deleted custom_owner",
+        ),
+    }
+}
+
+#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#[post("/editCustomOwners", data = "<custom_owner_edit>")]
+pub fn post_edit_custom_owners(
+    config: rocket::State<'_, utils::types::Settings>,
+    database: pool::DbConn,
+    custom_owner_edit: Result<
+        rocket::request::LenientForm<models::CustomOwnerModify>,
+        rocket::request::FormError<'_>,
+    >,
+) -> rocket::response::Flash<rocket::response::Redirect> {
+    trace!("post_edit_custom_owners()");
+
+    let update_result: Result<_, failure::Error> = if let Ok(custom_owner_edit) = custom_owner_edit {
+        let mut custom_owner = custom_owner_edit.into_inner();
+        custom_owner.custom_owner_name = custom_owner.custom_owner_name.to_lowercase();
+        custom_owner.recipient = custom_owner.recipient.to_lowercase();
+        if let Err(errors) = custom_owner.validate() {
+            let errors = errors.field_errors();
+            let msg = match find_first_validation_message(&errors) {
+                Some(m) => m,
+                None => "Failed to parse form data",
+            };
+            return rocket::response::Flash::error(
+                rocket::response::Redirect::to("/editCustomOwners"),
+                msg,
+            );
+        }
+        database::edit_custom_owner(&*config, &*database, &custom_owner)
+    } else {
+        return rocket::response::Flash::error(
+            rocket::response::Redirect::to("/editCustomOwners"),
+            "Failed to parse form data",
+        );
+    };
+
+    match update_result {
+        Ok(0) | Err(_) => rocket::response::Flash::error(
+            rocket::response::Redirect::to("/editCustomOwners"),
+            "Failed to update custom_owner",
+        ),
+        _ => rocket::response::Flash::success(
+            rocket::response::Redirect::to("/editCustomOwners"),
+            "Successfully updated custom_owner",
         ),
     }
 }

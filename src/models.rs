@@ -1,6 +1,9 @@
 use chrono;
 use rocket;
+use crate::database;
 use crate::schema::*;
+use crate::utils;
+use crate::utils::slack;
 use std;
 use validator::{Validate, ValidationError};
 
@@ -131,7 +134,28 @@ pub struct DeviceUpdate {
 fn validate_device_checkout(device: &DeviceUpdate) -> Result<(), ValidationError> {
     if device.reservation_status == ReservationStatus::Reserved {
         match device.device_owner {
-            Some(ref owner) if !owner.trim().is_empty() => Ok(()),
+            Some(ref owner) if !owner.trim().is_empty() => {
+                let slack_client = slack::slack_client_init();
+                let slack_user_exists = slack::slack_user_exists(&owner.trim(), &slack_client);
+
+                let mut config = utils::cmdline::parse_cmdline();
+                config.module_path = Some(module_path!().into());
+                let database = database::establish_connection(&config).unwrap();
+                let is_custom_owner = match database::get_custom_owner(&config, &database, &owner.trim()) {
+                    Ok(Some(custom_owner)) => {
+                        debug!("User in custom owners: {:?}", custom_owner);
+                        true
+                    },
+                    _ => false,
+                };
+                if slack_user_exists || is_custom_owner {
+                    Ok(())
+                } else {
+                    let mut e = ValidationError::new("reservation");
+                    e.message = Some("Please enter a valid slack username or custom owner when reserving a device.".into());
+                    Err(e)
+                }
+            },
             _ => {
                 let mut e = ValidationError::new("reservation");
                 e.message = Some("Please supply a username when reserving a device".into());
@@ -240,6 +264,179 @@ pub struct ReservationRequestDevice {
     pub pool_id: i32,
 }
 
+// custom owners
+
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    Identifiable,
+    Queryable,
+    Associations,
+    Serialize,
+    Deserialize,
+)]
+pub struct CustomOwner {
+    pub id: i32,
+    pub custom_owner_name: String,
+    pub recipient: String,
+    pub description: Option<String>,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
+}
+
+#[cfg_attr(
+    feature = "cargo-clippy",
+    allow(print_literal, suspicious_else_formatting)
+)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Default,
+    Clone,
+    Hash,
+    Serialize,
+    Deserialize,
+    FromForm,
+    Validate,
+)]
+#[validate(schema(function = "validate_custom_owner_modify"))]
+pub struct CustomOwnerModify {
+    pub id: i32,
+    #[validate(length(min = "1", message = "custom_owner_name cannot be empty"))]
+    pub custom_owner_name: String,
+    #[validate(length(min = "1", message = "recipient cannot be empty"))]
+    pub recipient: String,
+    pub description: Option<String>,
+}
+
+fn validate_custom_owner_modify(custom_owner: &CustomOwnerModify) -> Result<(), ValidationError> {
+    let mut config = utils::cmdline::parse_cmdline();
+    config.module_path = Some(module_path!().into());
+    let database = database::establish_connection(&config).unwrap();
+    // modify name allowed only if no devices reserved
+    let custom_owner_rec = database::get_custom_owner_by_id(&config, &database, custom_owner.id);
+    match custom_owner_rec {
+        Ok(Some(custom_owner_rec)) => {
+            if custom_owner_rec.custom_owner_name.ne(&custom_owner.custom_owner_name) {
+                let custom_owner_devices = database::get_devices_by_owner(&config, &database, &custom_owner_rec.custom_owner_name)
+                    .expect("Failed to get custom_owner devices");
+                if custom_owner_devices.iter().count() > 0 {
+                    let mut e = ValidationError::new("custom_owner");
+                    e.message = Some("Cannot modify name of custom_owner with devices reserved".into());
+                    return Err(e);
+                }
+            }
+        },
+        Ok(None) => {
+            #[cfg(test)]
+            warn!("custom_owner_rec not found. This is acceptable in unit tests.");
+        },
+        Err(error) => error!("Error occured while retrieving custom_owner_rec: {:?}", error),
+    }
+    // validate recipient
+    let ref recipient = custom_owner.recipient;
+    if recipient.eq_ignore_ascii_case("none".into()) {
+        Ok(())
+    } else {
+        let slack_client = slack::slack_client_init();
+        let slack_user_exists = slack::slack_user_exists(&recipient.trim(), &slack_client);
+        let slack_channel_exists = slack::slack_channel_exists(&recipient.trim(), &slack_client);
+        if slack_user_exists || slack_channel_exists {
+            Ok(())
+        } else {
+            let mut e = ValidationError::new("custom_owner");
+            e.message = Some("Recipient must be valid Slack user, Slack channel or \"None\".".into());
+            Err(e)
+        }
+    }
+}
+
+#[cfg_attr(
+    feature = "cargo-clippy",
+    allow(print_literal, suspicious_else_formatting)
+)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Default,
+    Clone,
+    Hash,
+    Serialize,
+    Deserialize,
+    Insertable,
+    FromForm,
+    Validate,
+)]
+#[validate(schema(function = "validate_custom_owner_insert"))]
+#[table_name = "custom_owners"]
+// We have a separate struct for insert because rocket expects the form to match exactly
+pub struct CustomOwnerInsert {
+    #[validate(length(min = "1", message = "custom_owner_name cannot be empty"))]
+    pub custom_owner_name: String,
+    #[validate(length(min = "1", message = "recipient cannot be empty"))]
+    pub recipient: String,
+    pub description: Option<String>,
+}
+
+fn validate_custom_owner_insert(custom_owner: &CustomOwnerInsert) -> Result<(), ValidationError> {
+    let ref recipient = custom_owner.recipient;
+    if recipient.eq_ignore_ascii_case("none".into()) {
+        Ok(())
+    } else {
+        let slack_client = slack::slack_client_init();
+        let slack_user_exists = slack::slack_user_exists(&recipient.trim(), &slack_client);
+        let slack_channel_exists = slack::slack_channel_exists(&recipient.trim(), &slack_client);
+        if slack_user_exists || slack_channel_exists {
+            Ok(())
+        } else {
+            let mut e = ValidationError::new("custom_owner");
+            e.message = Some("Recipient must be valid Slack user, Slack channel or \"none\".".into());
+            Err(e)
+        }
+    }
+}
+
+#[cfg_attr(
+    feature = "cargo-clippy",
+    allow(print_literal, suspicious_else_formatting)
+)]
+#[derive(
+    Debug, PartialEq, Eq, PartialOrd, Ord, Default, Clone, Hash, Serialize, Deserialize, FromForm, Validate
+)]
+#[validate(schema(function = "validate_custom_owner_delete"))]
+pub struct CustomOwnerDelete {
+    pub id: i32,
+}
+
+fn validate_custom_owner_delete(custom_owner: &CustomOwnerDelete) -> Result<(), ValidationError> {
+    let mut config = utils::cmdline::parse_cmdline();
+    config.module_path = Some(module_path!().into());
+    let database = database::establish_connection(&config).unwrap();
+    // delete allowed only if no devices reserved
+    let ref custom_owner_id = custom_owner.id;
+    let custom_owner_rec = database::get_custom_owner_by_id(&config, &database, *custom_owner_id)
+        .expect("Failed to get custom owner by id").unwrap();
+    let custom_owner_devices = database::get_devices_by_owner(&config, &database, &custom_owner_rec.custom_owner_name)
+        .expect("Failed to get custom_owner devices");
+    if custom_owner_devices.iter().count() > 0 {
+        let mut e = ValidationError::new("custom_owner");
+        e.message = Some("Cannot delete custom_owner with devices reserved".into());
+        return Err(e);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -252,11 +449,16 @@ mod test {
             comments: None,
             reservation_status: ReservationStatus::Available,
         };
-        assert!(device.validate().is_ok());
+        assert!(device.validate().is_ok()); // empty fields valid if device being returned
         device.reservation_status = ReservationStatus::Reserved;
-        assert!(device.validate().is_err());
-        device.device_owner = Some("toby".into());
-        assert!(device.validate().is_ok());
+        assert!(device.validate().is_err()); // empty device_owner not ok
+        device.device_owner = Some("fake_user".into());
+        assert!(device.validate().is_err()); // invalid slack user not ok
+        device.device_owner = Some("slack_user".into());
+        assert!(device.validate().is_ok()); // slack user valid
+        // TODO custom_owner db entry required
+        // device.device_owner = Some("custom1".into());
+        // assert!(device.validate().is_ok()); // custom owner valid
     }
 
     #[test]
@@ -288,5 +490,58 @@ mod test {
         assert!(device.validate().is_ok());
         device.device_name = "".into();
         assert!(device.validate().is_err());
+    }
+
+    #[test]
+    fn test_custom_owner_insert_validation() {
+        let mut custom_owner = CustomOwnerInsert {
+            custom_owner_name: "custom1".into(),
+            recipient: "slack_channel".into(),
+            description: Some("description".into()),
+        };
+        assert!(custom_owner.validate().is_ok()); // slack channel recipient is ok
+        custom_owner.recipient = "slack_user".into();
+        assert!(custom_owner.validate().is_ok()); // slack user recipient is ok
+        custom_owner.recipient = "none".into();
+        assert!(custom_owner.validate().is_ok()); // "none" recipient is ok
+        custom_owner.custom_owner_name = "".into();
+        assert!(custom_owner.validate().is_err()); // empty name not ok
+        custom_owner.custom_owner_name = "test".into();
+        custom_owner.recipient = "".into();
+        assert!(custom_owner.validate().is_err()); // empty recipient not ok
+        custom_owner.recipient = "not_real".into();
+        assert!(custom_owner.validate().is_err()); // invalid recipient not ok
+        custom_owner.recipient = "slack_channel".into();
+        custom_owner.description = Some("".into());
+        assert!(custom_owner.validate().is_ok()); // empty description is ok
+        custom_owner.description = None;
+        assert!(custom_owner.validate().is_ok()); // None description is ok
+    }
+
+    #[test]
+    fn test_custom_owner_edit_validation() {
+        let mut custom_owner = CustomOwnerModify {
+            id: 0,
+            custom_owner_name: "custom1".into(),
+            recipient: "slack_channel".into(),
+            description: Some("description".into()),
+        };
+        assert!(custom_owner.validate().is_ok()); // slack channel recipient is ok
+        custom_owner.recipient = "slack_user".into();
+        assert!(custom_owner.validate().is_ok()); // slack user recipient is ok
+        custom_owner.recipient = "none".into();
+        assert!(custom_owner.validate().is_ok()); // "none" recipient is ok
+        custom_owner.custom_owner_name = "".into();
+        assert!(custom_owner.validate().is_err()); // empty name not ok
+        custom_owner.custom_owner_name = "test".into();
+        custom_owner.recipient = "".into();
+        assert!(custom_owner.validate().is_err()); // empty recipient not ok
+        custom_owner.recipient = "not_real".into();
+        assert!(custom_owner.validate().is_err()); // invalid recipient not ok
+        custom_owner.recipient = "slack_channel".into();
+        custom_owner.description = Some("".into());
+        assert!(custom_owner.validate().is_ok()); // empty description is ok
+        custom_owner.description = None;
+        assert!(custom_owner.validate().is_ok()); // None description is ok
     }
 }
