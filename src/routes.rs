@@ -21,6 +21,10 @@ pub fn html_routes() -> Vec<rocket::Route> {
         self::post_edit_devices,
         self::post_add_devices,
         self::post_delete_devices,
+        self::get_edit_pools,
+        self::post_edit_pools,
+        self::post_add_pools,
+        self::post_delete_pools,
         self::get_edit_custom_owners,
         self::post_edit_custom_owners,
         self::post_add_custom_owners,
@@ -81,17 +85,6 @@ pub fn api_get_devices(
     trace!("api_get_devices()");
     let devices = database::get_devices(&*config, &*database)?;
     Ok(rocket_contrib::json::Json(devices))
-}
-
-#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
-#[get("/pools")]
-pub fn api_get_pools(
-    config: rocket::State<'_, utils::types::Settings>,
-    database: pool::DbConn,
-) -> Result<rocket_contrib::json::Json<Vec<models::Pool>>, failure::Error> {
-    trace!("api_get_pools()");
-    let pools = database::get_pools(&*config, &*database)?;
-    Ok(rocket_contrib::json::Json(pools))
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
@@ -448,6 +441,231 @@ pub fn post_devices(
         _ => rocket::response::Flash::success(
             rocket::response::Redirect::to("/devices"),
             "Successfully updated device",
+        ),
+    }
+}
+
+// pools
+#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#[get("/pools")]
+pub fn api_get_pools(
+    config: rocket::State<'_, utils::types::Settings>,
+    database: pool::DbConn,
+) -> Result<rocket_contrib::json::Json<Vec<models::Pool>>, failure::Error> {
+    trace!("api_get_pools()");
+    let pools = database::get_pools(&*config, &*database)?;
+    Ok(rocket_contrib::json::Json(pools))
+}
+
+#[derive(Serialize)]
+struct PerPoolContext {
+    pool: models::Pool,
+    updated_at_local: String,
+}
+
+#[derive(Serialize, Default)]
+struct PoolContext<'a> {
+    pools: Vec<PerPoolContext>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_message: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    success_message: Option<&'a str>,
+}
+
+fn format_pool(pool: models::Pool) -> PerPoolContext {
+    let updated_at_local = chrono::DateTime::<chrono::Local>::from_utc(
+        pool.updated_at,
+        chrono::Local::now().offset().fix(),
+    );
+    trace!("format_pool");
+
+    let updated_at_local = format!("{}", updated_at_local.format("%F %r"));
+    PerPoolContext {
+        pool,
+        updated_at_local,
+    }
+}
+
+fn gen_pool_context<'a>(
+    config: &utils::types::Settings,
+    database: &database::DbConn,
+    status_message: &'a Option<rocket::request::FlashMessage<'_, '_>>,
+) -> Result<PoolContext<'a>, failure::Error> {
+    trace!("gen_pool_context");
+
+    let mut success_message = None;
+    let mut error_message = None;
+
+    if let Some(ref status_message) = *status_message {
+        if status_message.name() == "success" {
+            success_message = Some(status_message.msg());
+        } else {
+            error_message = Some(status_message.msg());
+        }
+    }
+
+    let unformatted_pools = database::get_pools(config, database)?;
+
+    let pools = unformatted_pools.into_iter()
+        .map(format_pool)
+        .collect();
+
+    Ok(PoolContext {
+        pools,
+        error_message,
+        success_message,
+    })
+}
+
+#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#[get("/editPools")]
+pub fn get_edit_pools(
+    config: rocket::State<'_, utils::types::Settings>,
+    database: pool::DbConn,
+    status_message: Option<rocket::request::FlashMessage<'_, '_>>,
+) -> Result<rocket_contrib::templates::Template, failure::Error> {
+    trace!("get_edit_pools()");
+
+    let context = gen_pool_context(&*config, &*database, &status_message)?;
+    Ok(rocket_contrib::templates::Template::render(
+        "edit_pools",
+        &context,
+    ))
+}
+
+#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#[post("/addPools", data = "<pool_add>")]
+pub fn post_add_pools(
+    config: rocket::State<'_, utils::types::Settings>,
+    database: pool::DbConn,
+    pool_add: Result<
+        rocket::request::LenientForm<models::PoolInsert>,
+        rocket::request::FormError<'_>,
+    >,
+) -> rocket::response::Flash<rocket::response::Redirect> {
+    trace!("post_add_pools()");
+
+    let add_result = if let Ok(pool_add) = pool_add {
+        let pool = pool_add.into_inner();
+        debug!("pool: {:?}", pool);
+        if let Err(errors) = pool.validate() {
+            let errors = errors.field_errors();
+            let msg = match find_first_validation_message(&errors) {
+                Some(m) => m,
+                None => "Failed to parse form data",
+            };
+            return rocket::response::Flash::error(
+                rocket::response::Redirect::to("/editPools"),
+                msg,
+            );
+        }
+        database::insert_pool(&*config, &*database, &pool)
+    } else {
+        return rocket::response::Flash::error(
+            rocket::response::Redirect::to("/editPools"),
+            "Failed to parse form data",
+        );
+    };
+
+    match add_result {
+        Ok(0) | Err(_) => rocket::response::Flash::error(
+            rocket::response::Redirect::to("/editPools"),
+            "Failed to add pool",
+        ),
+        _ => rocket::response::Flash::success(
+            rocket::response::Redirect::to("/editPools"),
+            "Successfully added pool",
+        ),
+    }
+}
+
+#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#[post("/deletePools", data = "<pool_edit>")]
+pub fn post_delete_pools(
+    config: rocket::State<'_, utils::types::Settings>,
+    database: pool::DbConn,
+    pool_edit: Result<
+        rocket::request::LenientForm<models::PoolDelete>,
+        rocket::request::FormError<'_>,
+    >,
+) -> rocket::response::Flash<rocket::response::Redirect> {
+    trace!("post_delete_pools()");
+
+    let update_result: Result<_, failure::Error> = if let Ok(pool_edit) = pool_edit {
+        let pool = pool_edit.into_inner();
+        debug!("pool: {:?}", pool);
+        if let Err(errors) = pool.validate() {
+            let errors = errors.field_errors();
+            let msg = match find_first_validation_message(&errors) {
+                Some(m) => m,
+                None => "Failed to parse form data",
+            };
+            return rocket::response::Flash::error(
+                rocket::response::Redirect::to("/editPools"),
+                msg,
+            );
+        }
+        database::delete_pool(&*config, &*database, &pool)
+    } else {
+        return rocket::response::Flash::error(
+            rocket::response::Redirect::to("/editPools"),
+            "Failed to parse form data",
+        );
+    };
+
+    match update_result {
+        Ok(0) | Err(_) => rocket::response::Flash::error(
+            rocket::response::Redirect::to("/editPools"),
+            "Failed to delete pool",
+        ),
+        _ => rocket::response::Flash::success(
+            rocket::response::Redirect::to("/editPools"),
+            "Successfully deleted pool",
+        ),
+    }
+}
+
+#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
+#[post("/editPools", data = "<pool_edit>")]
+pub fn post_edit_pools(
+    config: rocket::State<'_, utils::types::Settings>,
+    database: pool::DbConn,
+    pool_edit: Result<
+        rocket::request::LenientForm<models::PoolModify>,
+        rocket::request::FormError<'_>,
+    >,
+) -> rocket::response::Flash<rocket::response::Redirect> {
+    trace!("post_edit_pools()");
+
+    let update_result: Result<_, failure::Error> = if let Ok(pool_edit) = pool_edit {
+        let pool = pool_edit.into_inner();
+        if let Err(errors) = pool.validate() {
+            let errors = errors.field_errors();
+            let msg = match find_first_validation_message(&errors) {
+                Some(m) => m,
+                None => "Failed to parse form data",
+            };
+            return rocket::response::Flash::error(
+                rocket::response::Redirect::to("/editPools"),
+                msg,
+            );
+        }
+        database::edit_pool(&*config, &*database, &pool)
+    } else {
+        return rocket::response::Flash::error(
+            rocket::response::Redirect::to("/editPools"),
+            "Failed to parse form data",
+        );
+    };
+
+    match update_result {
+        Ok(0) | Err(_) => rocket::response::Flash::error(
+            rocket::response::Redirect::to("/editPools"),
+            "Failed to update pool",
+        ),
+        _ => rocket::response::Flash::success(
+            rocket::response::Redirect::to("/editPools"),
+            "Successfully updated pool",
         ),
     }
 }

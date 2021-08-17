@@ -10,7 +10,7 @@ use self::diesel::prelude::*;
 use failure::ResultExt;
 use crate::schema::devices;
 use crate::schema::devices::dsl::*;
-use crate::schema::pools::dsl::pools;
+use crate::schema::pools;
 use crate::schema::custom_owners;
 
 pub type DbConn = diesel::sqlite::SqliteConnection;
@@ -172,7 +172,7 @@ pub fn get_pools(
     _config: &utils::types::Settings,
     database: &DbConn,
 ) -> Result<Vec<models::Pool>, failure::Error> {
-    Ok(pools
+    Ok(pools::dsl::pools
         .load::<models::Pool>(database)
         .with_context(|_| "Error loading pools".to_string())?)
 }
@@ -183,10 +183,46 @@ pub fn get_pool_by_id(
     database: &DbConn,
     requested_id: i32,
 ) -> Result<models::Pool, failure::Error> {
-    Ok(pools
+    Ok(pools::table
         .find(requested_id)
         .first::<models::Pool>(database)
         .with_context(|_| "Error loading pool".to_string())?)
+}
+
+///Edits the details specific to the pool
+pub fn edit_pool(
+    _config: &utils::types::Settings,
+    database: &DbConn,
+    pool_edit: &models::PoolModify,
+) -> Result<usize, failure::Error> {
+    Ok(diesel::update(pools::table
+        .filter(pools::id.eq(&pool_edit.id)))
+        .set((
+            pools::pool_name.eq(&pool_edit.pool_name),
+        ))
+        .execute(database)?)
+}
+
+///Remove the pool from the database
+pub fn delete_pool(
+    _config: &utils::types::Settings,
+    database: &DbConn,
+    pool_delete: &models::PoolDelete,
+) -> Result<usize, failure::Error> {
+    Ok(diesel::delete(pools::table
+        .filter(pools::id.eq(&pool_delete.id)))
+        .execute(database)?)
+}
+
+///Inserts a new pool
+pub fn insert_pool(
+    _config: &utils::types::Settings,
+    database: &DbConn,
+    pool_insert: &models::PoolInsert,
+) -> Result<usize, failure::Error> {
+    Ok(diesel::insert_into(pools::table)
+        .values(pool_insert)
+        .execute(database)?)
 }
 
 // custom owners (exceptions)

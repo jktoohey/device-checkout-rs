@@ -79,28 +79,6 @@ pub struct Device {
     pub pool_id: i32,
 }
 
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Clone,
-    Hash,
-    Identifiable,
-    Queryable,
-    Associations,
-    Insertable,
-    Serialize,
-    Deserialize,
-)]
-pub struct Pool {
-    pub id: i32,
-    pub pool_name: String,
-    pub created_at: chrono::NaiveDateTime,
-    pub updated_at: chrono::NaiveDateTime,
-}
-
 #[cfg_attr(
     feature = "cargo-clippy",
     allow(print_literal, suspicious_else_formatting)
@@ -262,6 +240,129 @@ pub struct ReservationRequestDevice {
     #[serde(default)]
     pub comments: Option<String>,
     pub pool_id: i32,
+}
+
+// pools
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    Identifiable,
+    Queryable,
+    Associations,
+    Serialize,
+    Deserialize,
+)]
+pub struct Pool {
+    pub id: i32,
+    pub pool_name: String,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
+}
+
+#[cfg_attr(
+    feature = "cargo-clippy",
+    allow(print_literal, suspicious_else_formatting)
+)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Default,
+    Clone,
+    Hash,
+    Serialize,
+    Deserialize,
+    FromForm,
+    Validate,
+)]
+#[validate(schema(function = "validate_pool_modify"))]
+pub struct PoolModify {
+    pub id: i32,
+    #[validate(length(min = "1", message = "pool_name cannot be empty"))]
+    pub pool_name: String,
+}
+
+fn validate_pool_modify(pool: &PoolModify) -> Result<(), ValidationError> {
+    let mut config = utils::cmdline::parse_cmdline();
+    config.module_path = Some(module_path!().into());
+    let database = database::establish_connection(&config).unwrap();
+    // modify name allowed only if pool is empty
+    let ref pool_id = pool.id;
+    let pool_devices = database::get_devices_in_pool(&config, &database, *pool_id)
+        .expect("Failed to get pool devices");
+    if pool_devices.iter().count() > 0 {
+        let mut e = ValidationError::new("pool");
+        e.message = Some("Cannot modify name of non-empty pool".into());
+        return Err(e);
+    }
+    Ok(())
+}
+
+#[cfg_attr(
+    feature = "cargo-clippy",
+    allow(print_literal, suspicious_else_formatting)
+)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Default,
+    Clone,
+    Hash,
+    Serialize,
+    Deserialize,
+    Insertable,
+    FromForm,
+    Validate,
+)]
+#[table_name = "pools"]
+// We have a separate struct for insert because rocket expects the form to match exactly
+pub struct PoolInsert {
+    #[validate(length(min = "1", message = "pool_name cannot be empty"))]
+    pub pool_name: String,
+}
+
+#[cfg_attr(
+    feature = "cargo-clippy",
+    allow(print_literal, suspicious_else_formatting)
+)]
+#[derive(
+    Debug, PartialEq, Eq, PartialOrd, Ord, Default, Clone, Hash, Serialize, Deserialize, FromForm, Validate
+)]
+#[validate(schema(function = "validate_pool_delete"))]
+pub struct PoolDelete {
+    pub id: i32,
+}
+
+fn validate_pool_delete(pool: &PoolDelete) -> Result<(), ValidationError> {
+    let ref pool_id = pool.id;
+    if *pool_id == 1 {
+        let mut e = ValidationError::new("pool");
+        e.message = Some("Default pool cannot be deleted".into());
+        return Err(e);
+    }
+
+    // delete allowed only if pool is empty
+    let mut config = utils::cmdline::parse_cmdline();
+    config.module_path = Some(module_path!().into());
+    let database = database::establish_connection(&config).unwrap();
+    let pool_devices = database::get_devices_in_pool(&config, &database, *pool_id)
+        .expect("Failed to get pool devices");
+    if pool_devices.iter().count() > 0 {
+        let mut e = ValidationError::new("pool");
+        e.message = Some("Cannot delete non-empty pool".into());
+        return Err(e);
+    }
+    Ok(())
 }
 
 // custom owners
@@ -490,6 +591,27 @@ mod test {
         assert!(device.validate().is_ok());
         device.device_name = "".into();
         assert!(device.validate().is_err());
+    }
+
+    #[test]
+    fn test_pool_insert_validation() {
+        let mut pool = PoolInsert {
+            pool_name: "custom1".into(),
+        };
+        assert!(pool.validate().is_ok()); // normal case ok
+        pool.pool_name = "".into();
+        assert!(pool.validate().is_err()); // empty name not ok
+    }
+
+    #[test]
+    fn test_pool_edit_validation() {
+        let mut pool = PoolModify {
+            id: 0,
+            pool_name: "custom1".into(),
+        };
+        assert!(pool.validate().is_ok()); // normal case is ok
+        pool.pool_name = "".into();
+        assert!(pool.validate().is_err()); // empty name not ok
     }
 
     #[test]
