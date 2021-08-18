@@ -25,6 +25,7 @@ pub fn slack_client_init() -> SlackAPIClient {
 // The Slack API doesn't have a method to retrieve a single channel by name
 pub fn slack_channel_exists(test_name: &str, slack_client: &SlackAPIClient) -> bool {
     // slack-rs api does not support the new Slack conversations api
+    debug!("slack_channel_exists(test_name: {})", &test_name);
     let response = slack_client.client.get("https://slack.com/api/conversations.list")
         .query(&[
             ("token", &slack_client.token),
@@ -42,16 +43,17 @@ pub fn slack_channel_exists(test_name: &str, slack_client: &SlackAPIClient) -> b
                     let is_channel = &c.is_channel.unwrap();
                     let is_archived = &c.is_archived.unwrap();
                     let is_private = &c.is_private.unwrap();
-                    debug!("slack channel - id: {}, name: {}, is_channel: {}, is_archived: {}, is_private: {}", &id, &name, &is_channel, &is_archived, &is_private);
+                    trace!("slack channel - id: {}, name: {}, is_channel: {}, is_archived: {}, is_private: {}", &id, &name, &is_channel, &is_archived, &is_private);
                     if *is_archived {
                         continue
                     }
                     if name.eq_ignore_ascii_case(&test_name) {
-                        debug!("Slack channel matched name: {}", &test_name);
+                        debug!("Input '{}' matched channel name '{}'", &test_name, &name);
                         return true;
                     }
                 }
-            }
+            };
+            debug!("Unable to match input '{}' with any Slack channel.", &test_name);
         },
         Err(error) => {
             warn!("Error occured while retrieving channels list: {:?}", error);
@@ -65,6 +67,7 @@ pub fn slack_channel_exists(test_name: &str, slack_client: &SlackAPIClient) -> b
 #[cfg(not(test))]
 // The Slack API doesn't have a method to retrieve a single user by name
 pub fn slack_user_exists(test_name: &str, slack_client: &SlackAPIClient) -> bool {
+    debug!("slack_user_exists(test_name: {})", &test_name);
     let users = slack_api::users::list(
         &slack_client.client,
         &slack_client.token,
@@ -81,20 +84,21 @@ pub fn slack_user_exists(test_name: &str, slack_client: &SlackAPIClient) -> bool
                     let is_bot = &u.is_bot.unwrap();
                     let is_app_user = &u.is_app_user.unwrap();
                     let deleted = &u.deleted.unwrap();
-                    debug!("id: {}, name: {}, display_name: {:?}, is_bot: {}, is_app_user: {}, deleted: {}", &id, &name, &display_name, &is_bot, &is_app_user, &deleted);
+                    trace!("id: {}, name: {}, display_name: {:?}, is_bot: {}, is_app_user: {}, deleted: {}", &id, &name, &display_name, &is_bot, &is_app_user, &deleted);
                     if *is_bot || *deleted {
                         continue
                     }
                     if name.eq_ignore_ascii_case(&test_name) {
-                        debug!("Owner matched name: {}", &test_name);
+                        debug!("Input '{}' matched name: {}", &test_name, &name);
                         return true;
                     }
                     if display_name.eq_ignore_ascii_case(&test_name) {
-                        debug!("Owner matched display_name: {}", &test_name);
+                        debug!("Input '{}' matched display_name: {}", &test_name, &display_name);
                         return true;
                     }
                 }
             };
+            debug!("Unable to match input '{}' with any Slack user.", &test_name);
         },
         Err(error) => {
             warn!("Error occured while retrieving users list: {:?}", error);

@@ -111,6 +111,7 @@ pub struct DeviceUpdate {
 
 fn validate_device_checkout(device: &DeviceUpdate) -> Result<(), ValidationError> {
     if device.reservation_status == ReservationStatus::Reserved {
+        debug!("Validate device (id: {}) reserved - owner is valid", &device.id);
         match device.device_owner {
             Some(ref owner) if !owner.trim().is_empty() => {
                 let slack_client = slack::slack_client_init();
@@ -121,10 +122,14 @@ fn validate_device_checkout(device: &DeviceUpdate) -> Result<(), ValidationError
                 let database = database::establish_connection(&config).unwrap();
                 let is_custom_owner = match database::get_custom_owner(&config, &database, &owner.trim()) {
                     Ok(Some(custom_owner)) => {
-                        debug!("User in custom owners: {:?}", custom_owner);
+                        trace!("User in custom owners: {:?}", custom_owner);
+                        debug!("Matched owner '{}' to custom owner '{}'", &owner.trim(), &custom_owner.custom_owner_name);
                         true
                     },
-                    _ => false,
+                    _ => {
+                        debug!("Owner '{}' is not in custom owners", &owner.trim());
+                        false
+                    }
                 };
                 if slack_user_exists || is_custom_owner {
                     Ok(())
@@ -141,6 +146,7 @@ fn validate_device_checkout(device: &DeviceUpdate) -> Result<(), ValidationError
             }
         }
     } else {
+        debug!("Validate device (id: {}) available", &device.id);
         Ok(())
     }
 }
@@ -294,6 +300,7 @@ fn validate_pool_modify(pool: &PoolModify) -> Result<(), ValidationError> {
     config.module_path = Some(module_path!().into());
     let database = database::establish_connection(&config).unwrap();
     // modify name allowed only if pool is empty
+    debug!("Validate pool (id: {}) modify - pool is empty", &pool.id);
     let ref pool_id = pool.id;
     let pool_devices = database::get_devices_in_pool(&config, &database, *pool_id)
         .expect("Failed to get pool devices");
@@ -344,6 +351,7 @@ pub struct PoolDelete {
 }
 
 fn validate_pool_delete(pool: &PoolDelete) -> Result<(), ValidationError> {
+    debug!("Validate pool (id: {}) delete - not default pool", &pool.id);
     let ref pool_id = pool.id;
     if *pool_id == 1 {
         let mut e = ValidationError::new("pool");
@@ -355,6 +363,7 @@ fn validate_pool_delete(pool: &PoolDelete) -> Result<(), ValidationError> {
     let mut config = utils::cmdline::parse_cmdline();
     config.module_path = Some(module_path!().into());
     let database = database::establish_connection(&config).unwrap();
+    debug!("Validate pool (id: {}) delete - pool is empty", &pool.id);
     let pool_devices = database::get_devices_in_pool(&config, &database, *pool_id)
         .expect("Failed to get pool devices");
     if pool_devices.iter().count() > 0 {
@@ -423,6 +432,7 @@ fn validate_custom_owner_modify(custom_owner: &CustomOwnerModify) -> Result<(), 
     config.module_path = Some(module_path!().into());
     let database = database::establish_connection(&config).unwrap();
     // modify name allowed only if no devices reserved
+    debug!("Validate custom_owner (id: {}) modify name - not in reserved devices", &custom_owner.id);
     let custom_owner_rec = database::get_custom_owner_by_id(&config, &database, custom_owner.id);
     match custom_owner_rec {
         Ok(Some(custom_owner_rec)) => {
@@ -443,8 +453,10 @@ fn validate_custom_owner_modify(custom_owner: &CustomOwnerModify) -> Result<(), 
         Err(error) => error!("Error occured while retrieving custom_owner_rec: {:?}", error),
     }
     // validate recipient
+    debug!("Validate custom_owner (id: {}) modify - recipient: {}", &custom_owner.id, &custom_owner.recipient);
     let ref recipient = custom_owner.recipient;
     if recipient.eq_ignore_ascii_case("none".into()) {
+        debug!("Recipient '{}' matches \"none\"", &custom_owner.recipient);
         Ok(())
     } else {
         let slack_client = slack::slack_client_init();
@@ -491,8 +503,10 @@ pub struct CustomOwnerInsert {
 }
 
 fn validate_custom_owner_insert(custom_owner: &CustomOwnerInsert) -> Result<(), ValidationError> {
+    debug!("Validate custom_owner insert - recipient: {}", &custom_owner.recipient);
     let ref recipient = custom_owner.recipient;
     if recipient.eq_ignore_ascii_case("none".into()) {
+        debug!("Recipient '{}' matches \"none\"", &custom_owner.recipient);
         Ok(())
     } else {
         let slack_client = slack::slack_client_init();
@@ -525,6 +539,7 @@ fn validate_custom_owner_delete(custom_owner: &CustomOwnerDelete) -> Result<(), 
     config.module_path = Some(module_path!().into());
     let database = database::establish_connection(&config).unwrap();
     // delete allowed only if no devices reserved
+    debug!("Validate custom_owner (id: {}) delete - not in reserved devices", &custom_owner.id);
     let ref custom_owner_id = custom_owner.id;
     let custom_owner_rec = database::get_custom_owner_by_id(&config, &database, *custom_owner_id)
         .expect("Failed to get custom owner by id").unwrap();
