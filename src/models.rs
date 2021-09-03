@@ -288,28 +288,10 @@ pub struct Pool {
     FromForm,
     Validate,
 )]
-#[validate(schema(function = "validate_pool_modify"))]
 pub struct PoolModify {
     pub id: i32,
     #[validate(length(min = "1", message = "pool_name cannot be empty"))]
     pub pool_name: String,
-}
-
-fn validate_pool_modify(pool: &PoolModify) -> Result<(), ValidationError> {
-    let mut config = utils::cmdline::parse_cmdline();
-    config.module_path = Some(module_path!().into());
-    let database = database::establish_connection(&config).unwrap();
-    // modify name allowed only if pool is empty
-    debug!("Validate pool (id: {}) modify - pool is empty", &pool.id);
-    let ref pool_id = pool.id;
-    let pool_devices = database::get_devices_in_pool(&config, &database, *pool_id)
-        .expect("Failed to get pool devices");
-    if pool_devices.iter().count() > 0 {
-        let mut e = ValidationError::new("pool");
-        e.message = Some("Cannot modify name of non-empty pool".into());
-        return Err(e);
-    }
-    Ok(())
 }
 
 #[cfg_attr(
