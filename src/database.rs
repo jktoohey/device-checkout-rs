@@ -199,6 +199,7 @@ pub fn edit_pool(
         .filter(pools::id.eq(&pool_edit.id)))
         .set((
             pools::pool_name.eq(&pool_edit.pool_name),
+            pools::description.eq(&pool_edit.description),
         ))
         .execute(database)?)
 }

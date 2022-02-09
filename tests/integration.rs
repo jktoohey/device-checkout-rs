@@ -52,11 +52,27 @@ fn test_api_get_pools() {
 
     let rocket = routes::rocket(config).expect("creating rocket instance");
     let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+
+    client.post("/addPools")
+    .header(rocket::http::ContentType(rocket::http::MediaType::Form))
+    .body(r#"pool_name=Custom1&description=test+description"#)
+    .dispatch();
+
+    client.post("/addPools")
+    .header(rocket::http::ContentType(rocket::http::MediaType::Form))
+    .body(r#"pool_name=Custom2&description=test+description+2"#)
+    .dispatch();
+
     let mut response = client.get("/api/pools").dispatch();
     assert_eq!(response.status(), rocket::http::Status::Ok);
     let body = response.body_string().unwrap();
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(v[0]["pool_name"], "Default Pool");
+    assert_eq!(v[0]["description"], "");
+    assert_eq!(v[1]["pool_name"], "Custom1");
+    assert_eq!(v[1]["description"], "test description");
+    assert_eq!(v[2]["pool_name"], "Custom2");
+    assert_eq!(v[2]["description"], "test description 2");
 }
 
 #[test]

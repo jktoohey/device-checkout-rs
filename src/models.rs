@@ -266,6 +266,7 @@ pub struct ReservationRequestDevice {
 pub struct Pool {
     pub id: i32,
     pub pool_name: String,
+    pub description: Option<String>,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
 }
@@ -292,6 +293,7 @@ pub struct PoolModify {
     pub id: i32,
     #[validate(length(min = "1", message = "pool_name cannot be empty"))]
     pub pool_name: String,
+    pub description: Option<String>,
 }
 
 #[cfg_attr(
@@ -318,6 +320,7 @@ pub struct PoolModify {
 pub struct PoolInsert {
     #[validate(length(min = "1", message = "pool_name cannot be empty"))]
     pub pool_name: String,
+    pub description: Option<String>,
 }
 
 #[cfg_attr(
@@ -594,8 +597,11 @@ mod test {
     fn test_pool_insert_validation() {
         let mut pool = PoolInsert {
             pool_name: "custom1".into(),
+            description: Some("test description".into()),
         };
         assert!(pool.validate().is_ok()); // normal case ok
+        pool.description = Some("".into());
+        assert!(pool.validate().is_ok()); // empty pool description is ok
         pool.pool_name = "".into();
         assert!(pool.validate().is_err()); // empty name not ok
     }
@@ -605,8 +611,11 @@ mod test {
         let mut pool = PoolModify {
             id: 0,
             pool_name: "custom1".into(),
+            description: Some("test description".into()),
         };
         assert!(pool.validate().is_ok()); // normal case is ok
+        pool.description = Some("".into());
+        assert!(pool.validate().is_ok()); // empty pool description is ok
         pool.pool_name = "".into();
         assert!(pool.validate().is_err()); // empty name not ok
     }

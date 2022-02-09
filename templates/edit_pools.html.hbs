@@ -51,15 +51,23 @@ $("#confirm-modal-{{this.pool.id}}").click(function(){
 			<table class="table table-bordered">
 				<thead class="thead-dark">
 					<tr>
+						<th>Pool ID</th>
 						<th>Pool Name</th>
+						<th>Description</th>
 						<th></th>
 						<th></th>
 					</tr>
 				</thead>
 				{{#each pools as |item|}}
 				<tr>
+					<td style="width: 5%">
+						<input type="text" name="id" value="{{item.pool.id}}" class="form-control" disabled >
+					</td>
 					<td>
-						<input type="text" name="pool_name" class="form-control" value="{{item.pool.pool_name}}" form="edit-{{item.pool.id}}">
+						<input type="text" name="pool_name" value="{{item.pool.pool_name}}" form="edit-{{item.pool.id}}" class="form-control">
+					</td>
+					<td>
+						<input type="text" name="description" value="{{item.pool.description}}" form="edit-{{item.pool.id}}" class="form-control">
 					</td>
 					<td>
 						<form id="edit-{{item.pool.id}}" name="edit-{{item.pool.id}}" action="/editPools" method="post">
@@ -78,8 +86,12 @@ $("#confirm-modal-{{this.pool.id}}").click(function(){
 				</tr>
 				{{/each}}
 				<tr>
+					<td></td>
 					<td>
 						<input type="text" name="pool_name" class="form-control" value="" form="_internal_new_pool">
+					</td>
+					<td>
+						<input type="text" name="description" class="form-control" value="" form="_internal_new_pool">
 					</td>
 					<td>
 						<form id="_internal_new_pool" name="_internal_new_pool" action="/addPools" method="post">

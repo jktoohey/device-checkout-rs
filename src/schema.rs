@@ -16,6 +16,7 @@ table! {
     pools (id) {
         id -> Integer,
         pool_name -> Text,
+        description -> Nullable<Text>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
