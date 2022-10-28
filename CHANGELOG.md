@@ -1,3 +1,27 @@
+<a name="0.3.0"></a>
+## 0.3.0 (2022-10-28)
+
+Features
+* Add PoolID and description to Pools page
+* Improve logging during validation
+* Add support for managing pools
+* Update README to be a little more helpful for Rust newbies
+* Username validation against Slack and Custom Owners support
+* Make compatible with Rust 2018 edition
+* Added pools endpoint
+* Change device pool filtering to query string
+* Add drop down for filtering devices by pool
+* Add device table searching and hover highlighting
+* Make reservations randomly choose a device
+* Add pools to devices in the UI
+* Add a reservations api endpoint for reserving devices
+* Add pools for devices to be in
+* Add API for ending device reservations
+
+Fixes
+* Ensure updating a device leaves users on the same page
+* Allow edit of pool when non-empty
+
 <a name="0.2.3"></a>
 ## 0.2.3 (2018-08-02)
 
