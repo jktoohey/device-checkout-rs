@@ -13,4 +13,4 @@ devices.db
 **/__pycache__/
 *.snap
 device-checkout_source.tar.bz2
-
+Cargo.lock

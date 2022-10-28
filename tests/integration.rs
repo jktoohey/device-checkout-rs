@@ -1,8 +1,7 @@
-
-use device_checkout_lib::*;
-
+use rocket::local::blocking::{Client, LocalResponse};
 use tempfile;
 use victoria_dom;
+use device_checkout::*;
 
 #[test]
 fn test_api_get_device() {
@@ -12,11 +11,11 @@ fn test_api_get_device() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
     let mut response = client.get("/api/devices/unit1").dispatch();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(v["device_url"], "http://unit1");
 
@@ -32,11 +31,11 @@ fn test_api_get_devices() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
     let mut response = client.get("/api/devices").dispatch();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(v[0]["device_url"], "http://unit1");
     assert_eq!(v[1]["device_url"], "http://unit2");
@@ -50,8 +49,8 @@ fn test_api_get_pools() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     client.post("/addPools")
     .header(rocket::http::ContentType(rocket::http::MediaType::Form))
@@ -65,7 +64,7 @@ fn test_api_get_pools() {
 
     let mut response = client.get("/api/pools").dispatch();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(v[0]["pool_name"], "Default Pool");
     assert_eq!(v[0]["description"], "");
@@ -84,8 +83,8 @@ fn test_api_get_custom_owner() {
     database::run_migrations(&config).expect("running migrations");
 
     // Add custom owner record
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
     client.post("/addCustomOwners")
     .header(rocket::http::ContentType(rocket::http::MediaType::Form))
     .body(r#"custom_owner_name=Custom1&recipient=SlackUser&description=custom%20owner%20mapping%201"#)
@@ -93,7 +92,7 @@ fn test_api_get_custom_owner() {
 
     let mut response = client.get("/api/custom_owners/custom1").dispatch();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(v["id"], 1);
     assert_eq!(v["custom_owner_name"], "custom1");
@@ -103,7 +102,7 @@ fn test_api_get_custom_owner() {
     // assert request is not case-sensitive
     let mut response = client.get("/api/custom_owners/CUSTOM1").dispatch();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(v["id"], 1);
     assert_eq!(v["custom_owner_name"], "custom1");
@@ -123,8 +122,8 @@ fn test_api_get_custom_owners() {
     database::run_migrations(&config).expect("running migrations");
 
     // Add custom owner records
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
     client.post("/addCustomOwners")
     .header(rocket::http::ContentType(rocket::http::MediaType::Form))
     .body(r#"custom_owner_name=Custom1&recipient=SlackUser&description=custom%20owner%20mapping%201"#)
@@ -142,7 +141,7 @@ fn test_api_get_custom_owners() {
 
     let mut response = client.get("/api/custom_owners").dispatch();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(v[0]["id"], 1);
     assert_eq!(v[0]["custom_owner_name"], "custom1");
@@ -165,8 +164,8 @@ fn test_api_delete_reservation() {
     config.database_url = file.path().to_string_lossy().to_owned().to_string();
 
     database::run_migrations(&config).expect("running migrations");
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     /* TODO: Change this when the API for making reservations is ready. */
     let response = client
@@ -195,8 +194,8 @@ fn test_api_post_reservations() {
     config.database_url = file.path().to_string_lossy().to_owned().to_string();
 
     database::run_migrations(&config).expect("running migrations");
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     let mut response = client
         .post("/api/reservations")
@@ -204,7 +203,7 @@ fn test_api_post_reservations() {
         .body(r#"{"device_owner":"Barry","comments":"test reservation","device":{"pool_id":1}}"#)
         .dispatch();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(v["device_owner"], "Barry");
     assert_eq!(v["comments"], "test reservation");
@@ -226,11 +225,11 @@ fn test_html_get_devices() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
     let mut response = client.get("/devices").dispatch();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
     let dom = victoria_dom::DOM::new(&body);
     let _ = dom
         .at(r#"a[href="http://unit1"]"#)
@@ -248,11 +247,11 @@ fn test_html_get_edit_devices() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
     let mut response = client.get("/editDevices").dispatch();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
     let dom = victoria_dom::DOM::new(&body);
     let _ = dom
         .at(r#"input[name="device_url"][value="http://unit1"]"#)
@@ -262,7 +261,7 @@ fn test_html_get_edit_devices() {
         .expect("failed to find unit2");
 }
 
-fn get_cookies(response: &rocket::local::LocalResponse<'_>) -> Vec<rocket::http::Cookie<'static>> {
+fn get_cookies(response: &LocalResponse<'_>) -> Vec<rocket::http::Cookie<'static>> {
     let mut cookies = Vec::new();
     for header in response.headers().get("Set-Cookie") {
         if let Ok(cookie) = rocket::http::Cookie::parse_encoded(header) {
@@ -272,7 +271,7 @@ fn get_cookies(response: &rocket::local::LocalResponse<'_>) -> Vec<rocket::http:
     cookies
 }
 
-fn get_redirect(response: &rocket::local::LocalResponse<'_>) -> Option<String> {
+fn get_redirect(response: &LocalResponse<'_>) -> Option<String> {
     if response.status() == rocket::http::Status::SeeOther {
         response
             .headers()
@@ -285,9 +284,9 @@ fn get_redirect(response: &rocket::local::LocalResponse<'_>) -> Option<String> {
 }
 
 fn follow_redirect<'a>(
-    client: &'a rocket::local::Client,
-    response: &rocket::local::LocalResponse<'_>,
-) -> Option<rocket::local::LocalResponse<'a>> {
+    client: &'a Client,
+    response: &LocalResponse<'_>,
+) -> Option<LocalResponse<'a>> {
     let cookies = get_cookies(&response);
     let location = match get_redirect(&response) {
         Some(l) => l,
@@ -312,8 +311,8 @@ fn test_html_post_devices() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     let response = client
         .post("/devices")
@@ -324,7 +323,7 @@ fn test_html_post_devices() {
     let mut response = follow_redirect(&client, &response).unwrap();
     assert_eq!(response.status(), rocket::http::Status::Ok);
 
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
     let dom = victoria_dom::DOM::new(&body);
 
     let _ = dom
@@ -353,8 +352,8 @@ fn test_html_reserve_without_user() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     let response = client
         .post("/devices")
@@ -365,7 +364,7 @@ fn test_html_reserve_without_user() {
     let mut response = follow_redirect(&client, &response).unwrap();
     assert_eq!(response.status(), rocket::http::Status::Ok);
 
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
     let dom = victoria_dom::DOM::new(&body);
 
     let _ = dom
@@ -382,8 +381,8 @@ fn test_html_edit_devices() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     let response = client
         .post("/editDevices")
@@ -393,7 +392,7 @@ fn test_html_edit_devices() {
 
     let mut response = follow_redirect(&client, &response).unwrap();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
 
     let dom = victoria_dom::DOM::new(&body);
     let _ = dom
@@ -418,8 +417,8 @@ fn test_html_edit_devices_bad_url() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     let response = client
         .post("/editDevices")
@@ -427,15 +426,7 @@ fn test_html_edit_devices_bad_url() {
         .body(r#"id=1&device_name=testunit&device_url=notaurl&save=SAVE"#)
         .dispatch();
 
-    let mut response = follow_redirect(&client, &response).unwrap();
-    assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
-
-    let dom = victoria_dom::DOM::new(&body);
-    let _ = dom
-        .at(r#"#error_message"#)
-        .expect("failed to find error message");
-    assert!(dom.at(r#"#success_message"#).is_none());
+    assert_eq!(response.status(), rocket::http::Status::UnprocessableEntity);
 }
 
 #[test]
@@ -446,8 +437,8 @@ fn test_html_edit_devices_delete() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     let response = client
         .post("/deleteDevices")
@@ -457,7 +448,7 @@ fn test_html_edit_devices_delete() {
 
     let mut response = follow_redirect(&client, &response).unwrap();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
 
     let dom = victoria_dom::DOM::new(&body);
 
@@ -477,8 +468,8 @@ fn test_html_add_devices() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     let response = client
         .post("/addDevices")
@@ -488,7 +479,7 @@ fn test_html_add_devices() {
 
     let mut response = follow_redirect(&client, &response).unwrap();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
 
     let dom = victoria_dom::DOM::new(&body);
 
@@ -510,8 +501,8 @@ fn test_html_add_devices_bad_url() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     let response = client
         .post("/addDevices")
@@ -519,16 +510,7 @@ fn test_html_add_devices_bad_url() {
         .body(r#"device_name=testunit&device_url=notaurl&add=ADD"#)
         .dispatch();
 
-    let mut response = follow_redirect(&client, &response).unwrap();
-    assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
-
-    let dom = victoria_dom::DOM::new(&body);
-
-    let _ = dom
-        .at(r#"#error_message"#)
-        .expect("failed to find error message");
-    assert!(dom.at(r#"#success_message"#).is_none());
+    assert_eq!(response.status(), rocket::http::Status::UnprocessableEntity);
 }
 
 #[test]
@@ -539,8 +521,8 @@ fn test_get_root() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     let response = client.get("/").dispatch();
 
@@ -555,8 +537,8 @@ fn test_reserve_already_reserved() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     //reserve unit1
     let response = client
@@ -565,9 +547,9 @@ fn test_reserve_already_reserved() {
         .body(r#"id=1&device_owner=Owner&comments=xyzzy&reservation_status=Available"#)
         .dispatch();
 
-    let mut response = follow_redirect(&client, &response).unwrap();
+    let response = follow_redirect(&client, &response).unwrap();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
 
     let dom = victoria_dom::DOM::new(&body);
     let _ = dom
@@ -581,10 +563,9 @@ fn test_reserve_already_reserved() {
         .body(r#"id=1&device_owner=Owner2&comments=xyzzy&reservation_status=Available"#)
         .dispatch();
 
-    let mut response = follow_redirect(&client, &response).unwrap();
-
-    assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let response = follow_redirect(&client, &response).unwrap();
+    assert_eq!(&response.status(), &rocket::http::Status::Ok);
+    let body = &response.into_string().unwrap();
 
     let dom = victoria_dom::DOM::new(&body);
 
@@ -599,8 +580,6 @@ fn test_reserve_already_reserved() {
     assert!(dom
         .at(r#"input[name="device_owner"][value="Owner2"]"#)
         .is_none());
-
-    assert_eq!(response.status(), rocket::http::Status::Ok);
 }
 
 #[test]
@@ -611,8 +590,8 @@ fn test_returning_clears_fields() {
 
     database::run_migrations(&config).expect("running migrations");
 
-    let rocket = routes::rocket(config).expect("creating rocket instance");
-    let client = rocket::local::Client::new(rocket).expect("valid rocket instance");
+    let rocket = create_new_rocket(config);
+    let client = Client::tracked(rocket).expect("valid rocket instance");
 
     //reserve unit1
     let response = client
@@ -633,7 +612,7 @@ fn test_returning_clears_fields() {
 
     let mut response = follow_redirect(&client, &response).unwrap();
     assert_eq!(response.status(), rocket::http::Status::Ok);
-    let body = response.body_string().unwrap();
+    let body = response.into_string().unwrap();
 
     let dom = victoria_dom::DOM::new(&body);
 

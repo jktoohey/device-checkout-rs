@@ -4,6 +4,8 @@ use crate::utils;
 
 use rocket::request::FromRequest;
 use std::ops::Deref;
+use rocket::outcome::Outcome;
+use rocket::request;
 
 /// Initializes a database pool.
 pub fn init_pool(
@@ -28,19 +30,22 @@ pub struct DbConn(
 /// Attempts to retrieve a single connection from the managed database pool. If
 /// no pool is currently managed, fails with an `InternalServerError` status. If
 /// no connections are available, fails with a `ServiceUnavailable` status.
-impl<'a, 'r> FromRequest<'a, 'r> for DbConn {
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for DbConn {
     type Error = ();
 
-    fn from_request(
-        request: &'a rocket::request::Request<'r>,
-    ) -> rocket::request::Outcome<Self, Self::Error> {
-        let pool = request.guard::<rocket::State<
-            '_, diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<diesel::sqlite::SqliteConnection>>,
-        >>()?;
-        match pool.get() {
-            Ok(conn) => rocket::Outcome::Success(DbConn(conn)),
-            Err(_) => rocket::Outcome::Failure((rocket::http::Status::ServiceUnavailable, ())),
+    async fn from_request(
+        request: &'r request::Request<'_>,
+    ) -> request::Outcome<Self, ()> {
+        let pool = request.guard::<&'r rocket::State<diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<diesel::sqlite::SqliteConnection>>>>().await;
+
+        if let Outcome::Success(pool) = pool {
+            if let Ok(conn) = pool.get() {
+                return Outcome::Success(DbConn(conn));
+            }
         }
+
+        return Outcome::Failure((rocket::http::Status::ServiceUnavailable, ()));
     }
 }
 

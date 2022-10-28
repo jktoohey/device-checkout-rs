@@ -8,7 +8,7 @@ use std;
 use validator::{Validate, ValidationError};
 
 #[derive(
-    Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Serialize, Deserialize, DbEnum,
+    Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Serialize, Deserialize, DbEnum, FromFormField
 )]
 pub enum ReservationStatus {
     Available,
@@ -28,19 +28,6 @@ impl std::ops::Not for ReservationStatus {
         match self {
             ReservationStatus::Available => ReservationStatus::Reserved,
             ReservationStatus::Reserved => ReservationStatus::Available,
-        }
-    }
-}
-
-use rocket::request::FromFormValue;
-impl<'v> FromFormValue<'v> for ReservationStatus {
-    type Error = &'v rocket::http::RawStr;
-
-    fn from_form_value(v: &'v rocket::http::RawStr) -> Result<Self, Self::Error> {
-        match v.to_lowercase().as_str() {
-            "available" => Ok(ReservationStatus::Available),
-            "reserved" => Ok(ReservationStatus::Reserved),
-            _ => Err(v),
         }
     }
 }

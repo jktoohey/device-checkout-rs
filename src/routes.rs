@@ -6,11 +6,15 @@ use crate::database;
 use failure;
 use crate::models;
 use crate::pool;
-use rocket_contrib;
+use rocket_dyn_templates;
 use std;
+use failure::{Error, Fail};
+use rocket::form::Form;
+use rocket::serde::json;
 use crate::utils;
 use validator;
 use validator::Validate;
+use crate::models::{CustomOwner, Device, Pool};
 
 pub fn html_routes() -> Vec<rocket::Route> {
     routes![
@@ -53,10 +57,10 @@ pub fn index() -> rocket::response::Redirect {
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/devices/<name>")]
 pub fn api_get_device(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
     name: String,
-) -> Result<rocket_contrib::json::Json<models::Device>, rocket::response::status::Custom<String>> {
+) -> Result<json::Json<models::Device>, rocket::response::status::Custom<String>> {
     trace!("api_get_device()");
     database::get_device(&*config, &*database, &name)
         .map_err(|_| {
@@ -73,27 +77,33 @@ pub fn api_get_device(
                 )
             })
         })
-        .map(rocket_contrib::json::Json)
+        .map(json::Json)
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/devices")]
 pub fn api_get_devices(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-) -> Result<rocket_contrib::json::Json<Vec<models::Device>>, failure::Error> {
+) -> Result<json::Json<Vec<Device>>, String> {
     trace!("api_get_devices()");
-    let devices = database::get_devices(&*config, &*database)?;
-    Ok(rocket_contrib::json::Json(devices))
+    return match database::get_devices(&*config, &*database) {
+        Ok(devices) => {
+            Ok(json::Json(devices))
+        }
+        Err(e) => {
+            Err(e.to_string())
+        }
+    };
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/reservations", format = "application/json", data = "<reservation>")]
 pub fn api_post_reservations(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    reservation: rocket_contrib::json::Json<models::ReservationRequest>,
-) -> Result<rocket_contrib::json::Json<models::Reservation>, rocket::http::Status> {
+    reservation: json::Json<models::ReservationRequest>,
+) -> Result<json::Json<models::Reservation>, rocket::http::Status> {
     trace!("api_post_reservations");
     // Find an available device from the pool specified
     let available_device =
@@ -125,12 +135,12 @@ pub fn api_post_reservations(
         device_owner: reservation.device_owner.clone().unwrap(),
         comments: reservation.comments.clone(),
     };
-    Ok(rocket_contrib::json::Json(reservation_response))
+    Ok(json::Json(reservation_response))
 }
 
 #[delete("/reservations/<id>")]
 pub fn api_delete_reservation(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
     id: i32,
 ) -> rocket::http::Status {
@@ -197,7 +207,7 @@ fn format_device(device: models::Device) -> PerDeviceContext {
 fn gen_device_context<'a>(
     config: &utils::types::Settings,
     database: &database::DbConn,
-    status_message: &'a Option<rocket::request::FlashMessage<'_, '_>>,
+    status_message: &'a Option<rocket::request::FlashMessage<'_>>,
     requested_pool_id: Option<i32>,
 ) -> Result<DevicesContext<'a>, failure::Error> {
     trace!("gen_device_context");
@@ -206,10 +216,10 @@ fn gen_device_context<'a>(
     let mut error_message = None;
 
     if let Some(ref status_message) = *status_message {
-        if status_message.name() == "success" {
-            success_message = Some(status_message.msg());
+        if status_message.kind() == "success" {
+            success_message = Some(status_message.message());
         } else {
-            error_message = Some(status_message.msg());
+            error_message = Some(status_message.message());
         }
     }
 
@@ -239,67 +249,69 @@ fn gen_device_context<'a>(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/devices?<pool_id>")]
 pub fn get_devices(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    status_message: Option<rocket::request::FlashMessage<'_, '_>>,
+    status_message: Option<rocket::request::FlashMessage<'_>>,
     pool_id: Option<i32>,
-) -> Result<rocket_contrib::templates::Template, failure::Error> {
+) -> Result<rocket_dyn_templates::Template, String> {
     trace!("get_devices()");
 
-    let context = gen_device_context(&*config, &*database, &status_message, pool_id)?;
-    Ok(rocket_contrib::templates::Template::render(
-        "devices", &context,
-    ))
+    return match gen_device_context(&*config, &*database, &status_message, pool_id) {
+        Ok(context) => {
+            Ok(rocket_dyn_templates::Template::render(
+            "devices", &context,
+            ))
+        }
+        Err(e) => {
+            Err(e.to_string())
+        }
+    };
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/editDevices")]
 pub fn get_edit_devices(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    status_message: Option<rocket::request::FlashMessage<'_, '_>>,
-) -> Result<rocket_contrib::templates::Template, failure::Error> {
+    status_message: Option<rocket::request::FlashMessage<'_>>,
+) -> Result<rocket_dyn_templates::Template, String> {
     trace!("get_edit_devices()");
 
-    let context = gen_device_context(&*config, &*database, &status_message, None)?;
-    Ok(rocket_contrib::templates::Template::render(
-        "edit_devices",
-        &context,
-    ))
+    match gen_device_context(&*config, &*database, &status_message, None) {
+        Ok(context) => {
+            Ok(rocket_dyn_templates::Template::render(
+                "edit_devices",
+                &context,
+            ))
+        }
+        Err(e) => {
+            Err(e.to_string())
+        }
+    }
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/addDevices", data = "<device_add>")]
 pub fn post_add_devices(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    device_add: Result<
-        rocket::request::LenientForm<models::DeviceInsert>,
-        rocket::request::FormError<'_>,
-    >,
+    device_add: Form<models::DeviceInsert>,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_add_devices()");
 
-    let add_result = if let Ok(device_add) = device_add {
-        let device = device_add.into_inner();
-        if let Err(errors) = device.validate() {
-            let errors = errors.field_errors();
-            let msg = match find_first_validation_message(&errors) {
-                Some(m) => m,
-                None => "Failed to parse form data",
-            };
-            return rocket::response::Flash::error(
-                rocket::response::Redirect::to("/editDevices"),
-                msg,
-            );
-        }
-        database::insert_device(&*config, &*database, &device)
-    } else {
+    let device = device_add.into_inner();
+    if let Err(errors) = device.validate() {
+        let errors = errors.field_errors();
+        let msg = match find_first_validation_message(&errors) {
+            Some(m) => m,
+            None => "Failed to parse form data",
+        };
         return rocket::response::Flash::error(
             rocket::response::Redirect::to("/editDevices"),
-            "Failed to parse form data",
+            msg,
         );
-    };
+    }
+    let add_result = database::insert_device(&*config, &*database, &device);
 
     match add_result {
         Ok(0) | Err(_) => rocket::response::Flash::error(
@@ -316,24 +328,14 @@ pub fn post_add_devices(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/deleteDevices", data = "<device_edit>")]
 pub fn post_delete_devices(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    device_edit: Result<
-        rocket::request::LenientForm<models::DeviceDelete>,
-        rocket::request::FormError<'_>,
-    >,
+    device_edit: Form<models::DeviceDelete>,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_delete_devices()");
 
-    let update_result: Result<_, failure::Error> = if let Ok(device_edit) = device_edit {
-        let device = device_edit.into_inner();
-        database::delete_device(&*config, &*database, &device)
-    } else {
-        return rocket::response::Flash::error(
-            rocket::response::Redirect::to("/editDevices"),
-            "Failed to parse form data",
-        );
-    };
+    let device = device_edit.into_inner();
+    let update_result = database::delete_device(&*config, &*database, &device);
 
     match update_result {
         Ok(0) | Err(_) => rocket::response::Flash::error(
@@ -350,35 +352,25 @@ pub fn post_delete_devices(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/editDevices", data = "<device_edit>")]
 pub fn post_edit_devices(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    device_edit: Result<
-        rocket::request::LenientForm<models::DeviceEdit>,
-        rocket::request::FormError<'_>,
-    >,
+    device_edit: Form<models::DeviceEdit>,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_edit_devices()");
 
-    let update_result: Result<_, failure::Error> = if let Ok(device_edit) = device_edit {
-        let device = device_edit.into_inner();
-        if let Err(errors) = device.validate() {
-            let errors = errors.field_errors();
-            let msg = match find_first_validation_message(&errors) {
-                Some(m) => m,
-                None => "Failed to parse form data",
-            };
-            return rocket::response::Flash::error(
-                rocket::response::Redirect::to("/editDevices"),
-                msg,
-            );
-        }
-        database::edit_device(&*config, &*database, &device)
-    } else {
+    let device = device_edit.into_inner();
+    if let Err(errors) = device.validate() {
+        let errors = errors.field_errors();
+        let msg = match find_first_validation_message(&errors) {
+            Some(m) => m,
+            None => "Failed to parse form data",
+        };
         return rocket::response::Flash::error(
             rocket::response::Redirect::to("/editDevices"),
-            "Failed to parse form data",
+            msg,
         );
-    };
+    }
+    let update_result = database::edit_device(&*config, &*database, &device);
 
     match update_result {
         Ok(0) | Err(_) => rocket::response::Flash::error(
@@ -395,43 +387,36 @@ pub fn post_edit_devices(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/devices", data = "<device_update>")]
 pub fn post_devices(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    device_update: Result<rocket::request::Form<models::DeviceUpdate>, rocket::request::FormError<'_>>,
+    device_update: Form<models::DeviceUpdate>
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_devices()");
 
-    let update_result = if let Ok(device_update) = device_update {
-        let mut device = device_update.into_inner();
+    let mut device = device_update.into_inner();
 
-        //save the old reservation status around for the sql query
-        let current_reservation_status = device.reservation_status;
+    //save the old reservation status around for the sql query
+    let current_reservation_status = device.reservation_status;
 
-        //toggle the reservation status
-        device.reservation_status = !device.reservation_status;
+    //toggle the reservation status
+    device.reservation_status = !device.reservation_status;
 
-        //blank out the owner and comments if we're returning it
-        if device.reservation_status == models::ReservationStatus::Available {
-            device.device_owner = None;
-            device.comments = None;
-        }
+    //blank out the owner and comments if we're returning it
+    if device.reservation_status == models::ReservationStatus::Available {
+        device.device_owner = None;
+        device.comments = None;
+    }
 
-        if let Err(errors) = device.validate() {
-            let errors = errors.field_errors();
-            let msg = match find_first_validation_message(&errors) {
-                Some(m) => m,
-                None => "Failed to parse form data",
-            };
-            return rocket::response::Flash::error(rocket::response::Redirect::to("/devices"), msg);
-        }
+    if let Err(errors) = device.validate() {
+        let errors = errors.field_errors();
+        let msg = match find_first_validation_message(&errors) {
+            Some(m) => m,
+            None => "Failed to parse form data",
+        };
+        return rocket::response::Flash::error(rocket::response::Redirect::to("/devices"), msg);
+    }
 
-        database::update_device(&*config, &*database, &device, current_reservation_status)
-    } else {
-        return rocket::response::Flash::error(
-            rocket::response::Redirect::to("/devices"),
-            "Failed to parse form data",
-        );
-    };
+    let update_result = database::update_device(&*config, &*database, &device, current_reservation_status);
 
     match update_result {
         Ok(0) | Err(_) => rocket::response::Flash::error(
@@ -449,12 +434,18 @@ pub fn post_devices(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/pools")]
 pub fn api_get_pools(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-) -> Result<rocket_contrib::json::Json<Vec<models::Pool>>, failure::Error> {
+) -> Result<json::Json<Vec<models::Pool>>, String> {
     trace!("api_get_pools()");
-    let pools = database::get_pools(&*config, &*database)?;
-    Ok(rocket_contrib::json::Json(pools))
+    return match database::get_pools(&*config, &*database) {
+        Ok(pools) => {
+            Ok(json::Json(pools))
+        }
+        Err(e) => {
+            Err(e.to_string())
+        }
+    };
 }
 
 #[derive(Serialize)]
@@ -489,7 +480,7 @@ fn format_pool(pool: models::Pool) -> PerPoolContext {
 fn gen_pool_context<'a>(
     config: &utils::types::Settings,
     database: &database::DbConn,
-    status_message: &'a Option<rocket::request::FlashMessage<'_, '_>>,
+    status_message: &'a Option<rocket::request::FlashMessage<'_>>,
 ) -> Result<PoolContext<'a>, failure::Error> {
     trace!("gen_pool_context");
 
@@ -497,10 +488,10 @@ fn gen_pool_context<'a>(
     let mut error_message = None;
 
     if let Some(ref status_message) = *status_message {
-        if status_message.name() == "success" {
-            success_message = Some(status_message.msg());
+        if status_message.kind() == "success" {
+            success_message = Some(status_message.message());
         } else {
-            error_message = Some(status_message.msg());
+            error_message = Some(status_message.message());
         }
     }
 
@@ -520,52 +511,48 @@ fn gen_pool_context<'a>(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/editPools")]
 pub fn get_edit_pools(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    status_message: Option<rocket::request::FlashMessage<'_, '_>>,
-) -> Result<rocket_contrib::templates::Template, failure::Error> {
+    status_message: Option<rocket::request::FlashMessage<'_>>,
+) -> Result<rocket_dyn_templates::Template, String> {
     trace!("get_edit_pools()");
 
-    let context = gen_pool_context(&*config, &*database, &status_message)?;
-    Ok(rocket_contrib::templates::Template::render(
-        "edit_pools",
-        &context,
-    ))
+    return match gen_pool_context(&*config, &*database, &status_message) {
+        Ok(context) => {
+            Ok(rocket_dyn_templates::Template::render(
+                "edit_pools",
+                &context,
+            ))
+        }
+        Err(e) => {
+            Err(e.to_string())
+        }
+    };
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/addPools", data = "<pool_add>")]
 pub fn post_add_pools(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    pool_add: Result<
-        rocket::request::LenientForm<models::PoolInsert>,
-        rocket::request::FormError<'_>,
-    >,
+    pool_add: Form<models::PoolInsert>,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_add_pools()");
 
-    let add_result = if let Ok(pool_add) = pool_add {
-        let pool = pool_add.into_inner();
-        debug!("pool: {:?}", pool);
-        if let Err(errors) = pool.validate() {
-            let errors = errors.field_errors();
-            let msg = match find_first_validation_message(&errors) {
-                Some(m) => m,
-                None => "Failed to parse form data",
-            };
-            return rocket::response::Flash::error(
-                rocket::response::Redirect::to("/editPools"),
-                msg,
-            );
-        }
-        database::insert_pool(&*config, &*database, &pool)
-    } else {
+    let pool = pool_add.into_inner();
+    debug!("pool: {:?}", pool);
+    if let Err(errors) = pool.validate() {
+        let errors = errors.field_errors();
+        let msg = match find_first_validation_message(&errors) {
+            Some(m) => m,
+            None => "Failed to parse form data",
+        };
         return rocket::response::Flash::error(
             rocket::response::Redirect::to("/editPools"),
-            "Failed to parse form data",
+            msg,
         );
-    };
+    }
+    let add_result = database::insert_pool(&*config, &*database, &pool);
 
     match add_result {
         Ok(0) | Err(_) => rocket::response::Flash::error(
@@ -582,36 +569,26 @@ pub fn post_add_pools(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/deletePools", data = "<pool_edit>")]
 pub fn post_delete_pools(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    pool_edit: Result<
-        rocket::request::LenientForm<models::PoolDelete>,
-        rocket::request::FormError<'_>,
-    >,
+    pool_edit: Form<models::PoolDelete>,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_delete_pools()");
 
-    let update_result: Result<_, failure::Error> = if let Ok(pool_edit) = pool_edit {
-        let pool = pool_edit.into_inner();
-        debug!("pool: {:?}", pool);
-        if let Err(errors) = pool.validate() {
-            let errors = errors.field_errors();
-            let msg = match find_first_validation_message(&errors) {
-                Some(m) => m,
-                None => "Failed to parse form data",
-            };
-            return rocket::response::Flash::error(
-                rocket::response::Redirect::to("/editPools"),
-                msg,
-            );
-        }
-        database::delete_pool(&*config, &*database, &pool)
-    } else {
+    let pool = pool_edit.into_inner();
+    debug!("pool: {:?}", pool);
+    if let Err(errors) = pool.validate() {
+        let errors = errors.field_errors();
+        let msg = match find_first_validation_message(&errors) {
+            Some(m) => m,
+            None => "Failed to parse form data",
+        };
         return rocket::response::Flash::error(
             rocket::response::Redirect::to("/editPools"),
-            "Failed to parse form data",
+            msg,
         );
-    };
+    }
+    let update_result = database::delete_pool(&*config, &*database, &pool);
 
     match update_result {
         Ok(0) | Err(_) => rocket::response::Flash::error(
@@ -628,35 +605,25 @@ pub fn post_delete_pools(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/editPools", data = "<pool_edit>")]
 pub fn post_edit_pools(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    pool_edit: Result<
-        rocket::request::LenientForm<models::PoolModify>,
-        rocket::request::FormError<'_>,
-    >,
+    pool_edit: Form<models::PoolModify>,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_edit_pools()");
 
-    let update_result: Result<_, failure::Error> = if let Ok(pool_edit) = pool_edit {
-        let pool = pool_edit.into_inner();
-        if let Err(errors) = pool.validate() {
-            let errors = errors.field_errors();
-            let msg = match find_first_validation_message(&errors) {
-                Some(m) => m,
-                None => "Failed to parse form data",
-            };
-            return rocket::response::Flash::error(
-                rocket::response::Redirect::to("/editPools"),
-                msg,
-            );
-        }
-        database::edit_pool(&*config, &*database, &pool)
-    } else {
+    let pool = pool_edit.into_inner();
+    if let Err(errors) = pool.validate() {
+        let errors = errors.field_errors();
+        let msg = match find_first_validation_message(&errors) {
+            Some(m) => m,
+            None => "Failed to parse form data",
+        };
         return rocket::response::Flash::error(
             rocket::response::Redirect::to("/editPools"),
-            "Failed to parse form data",
+            msg,
         );
-    };
+    }
+    let update_result = database::edit_pool(&*config, &*database, &pool);
 
     match update_result {
         Ok(0) | Err(_) => rocket::response::Flash::error(
@@ -704,7 +671,7 @@ fn format_custom_owner(custom_owner: models::CustomOwner) -> PerCustomOwnerConte
 fn gen_custom_owner_context<'a>(
     config: &utils::types::Settings,
     database: &database::DbConn,
-    status_message: &'a Option<rocket::request::FlashMessage<'_, '_>>,
+    status_message: &'a Option<rocket::request::FlashMessage<'_>>,
 ) -> Result<CustomOwnerContext<'a>, failure::Error> {
     trace!("gen_custom_owner_context");
 
@@ -712,10 +679,10 @@ fn gen_custom_owner_context<'a>(
     let mut error_message = None;
 
     if let Some(ref status_message) = *status_message {
-        if status_message.name() == "success" {
-            success_message = Some(status_message.msg());
+        if status_message.kind() == "success" {
+            success_message = Some(status_message.message());
         } else {
-            error_message = Some(status_message.msg());
+            error_message = Some(status_message.message());
         }
     }
 
@@ -736,10 +703,10 @@ fn gen_custom_owner_context<'a>(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/custom_owners/<name>")]
 pub fn api_get_custom_owner(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
     name: String,
-) -> Result<rocket_contrib::json::Json<models::CustomOwner>, rocket::response::status::Custom<String>> {
+) -> Result<json::Json<models::CustomOwner>, rocket::response::status::Custom<String>> {
     trace!("api_get_custom_owner()");
     database::get_custom_owner(&*config, &*database, &name)
         .map_err(|_| {
@@ -756,71 +723,74 @@ pub fn api_get_custom_owner(
                 )
             })
         })
-        .map(rocket_contrib::json::Json)
+        .map(json::Json)
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/custom_owners")]
 pub fn api_get_custom_owners(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-) -> Result<rocket_contrib::json::Json<Vec<models::CustomOwner>>, failure::Error> {
+) -> Result<json::Json<Vec<models::CustomOwner>>, String> {
     trace!("api_get_custom_owners()");
-    let custom_owners = database::get_custom_owners(&*config, &*database)?;
-    Ok(rocket_contrib::json::Json(custom_owners))
+    return match database::get_custom_owners(&*config, &*database) {
+        Ok(custom_owners) => {
+            Ok(json::Json(custom_owners))
+        }
+        Err(e) => {
+            Err(e.to_string())
+        }
+    };
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[get("/editCustomOwners")]
 pub fn get_edit_custom_owners(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    status_message: Option<rocket::request::FlashMessage<'_, '_>>,
-) -> Result<rocket_contrib::templates::Template, failure::Error> {
+    status_message: Option<rocket::request::FlashMessage<'_>>,
+) -> Result<rocket_dyn_templates::Template, String> {
     trace!("get_edit_custom_owners()");
 
-    let context = gen_custom_owner_context(&*config, &*database, &status_message)?;
-    Ok(rocket_contrib::templates::Template::render(
-        "edit_custom_owners",
-        &context,
-    ))
+    match gen_custom_owner_context(&*config, &*database, &status_message) {
+        Ok(context) => {
+            Ok(rocket_dyn_templates::Template::render(
+                "edit_custom_owners",
+                &context,
+            ))
+        }
+        Err(e) => {
+            Err(e.to_string())
+        }
+    }
 }
 
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/addCustomOwners", data = "<custom_owner_add>")]
 pub fn post_add_custom_owners(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    custom_owner_add: Result<
-        rocket::request::LenientForm<models::CustomOwnerInsert>,
-        rocket::request::FormError<'_>,
-    >,
+    custom_owner_add: Form<models::CustomOwnerInsert>,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_add_custom_owners()");
 
-    let add_result = if let Ok(custom_owner_add) = custom_owner_add {
-        let mut custom_owner = custom_owner_add.into_inner();
-        custom_owner.custom_owner_name = custom_owner.custom_owner_name.to_lowercase();
-        custom_owner.recipient = custom_owner.recipient.to_lowercase();
-        debug!("custom_owner: {:?}", custom_owner);
-        if let Err(errors) = custom_owner.validate() {
-            let errors = errors.field_errors();
-            let msg = match find_first_validation_message(&errors) {
-                Some(m) => m,
-                None => "Failed to parse form data",
-            };
-            return rocket::response::Flash::error(
-                rocket::response::Redirect::to("/editCustomOwners"),
-                msg,
-            );
-        }
-        database::insert_custom_owner(&*config, &*database, &custom_owner)
-    } else {
+    let mut custom_owner = custom_owner_add.into_inner();
+    custom_owner.custom_owner_name = custom_owner.custom_owner_name.to_lowercase();
+    custom_owner.recipient = custom_owner.recipient.to_lowercase();
+    debug!("custom_owner: {:?}", custom_owner);
+    if let Err(errors) = custom_owner.validate() {
+        let errors = errors.field_errors();
+        let msg = match find_first_validation_message(&errors) {
+            Some(m) => m,
+            None => "Failed to parse form data",
+        };
         return rocket::response::Flash::error(
             rocket::response::Redirect::to("/editCustomOwners"),
-            "Failed to parse form data",
+            msg,
         );
-    };
+    }
+
+    let add_result = database::insert_custom_owner(&*config, &*database, &custom_owner);
 
     match add_result {
         Ok(0) | Err(_) => rocket::response::Flash::error(
@@ -837,35 +807,25 @@ pub fn post_add_custom_owners(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/deleteCustomOwners", data = "<custom_owner_edit>")]
 pub fn post_delete_custom_owners(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    custom_owner_edit: Result<
-        rocket::request::LenientForm<models::CustomOwnerDelete>,
-        rocket::request::FormError<'_>,
-    >,
+    custom_owner_edit: Form<models::CustomOwnerDelete>,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_delete_custom_owners()");
 
-    let update_result: Result<_, failure::Error> = if let Ok(custom_owner_edit) = custom_owner_edit {
-        let custom_owner = custom_owner_edit.into_inner();
-        if let Err(errors) = custom_owner.validate() {
-            let errors = errors.field_errors();
-            let msg = match find_first_validation_message(&errors) {
-                Some(m) => m,
-                None => "Failed to parse form data",
-            };
-            return rocket::response::Flash::error(
-                rocket::response::Redirect::to("/editCustomOwners"),
-                msg,
-            );
-        }
-        database::delete_custom_owner(&*config, &*database, &custom_owner)
-    } else {
+    let custom_owner = custom_owner_edit.into_inner();
+    if let Err(errors) = custom_owner.validate() {
+        let errors = errors.field_errors();
+        let msg = match find_first_validation_message(&errors) {
+            Some(m) => m,
+            None => "Failed to parse form data",
+        };
         return rocket::response::Flash::error(
             rocket::response::Redirect::to("/editCustomOwners"),
-            "Failed to parse form data",
+            msg,
         );
-    };
+    }
+    let update_result = database::delete_custom_owner(&*config, &*database, &custom_owner);
 
     match update_result {
         Ok(0) | Err(_) => rocket::response::Flash::error(
@@ -882,37 +842,27 @@ pub fn post_delete_custom_owners(
 #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 #[post("/editCustomOwners", data = "<custom_owner_edit>")]
 pub fn post_edit_custom_owners(
-    config: rocket::State<'_, utils::types::Settings>,
+    config: &rocket::State<utils::types::Settings>,
     database: pool::DbConn,
-    custom_owner_edit: Result<
-        rocket::request::LenientForm<models::CustomOwnerModify>,
-        rocket::request::FormError<'_>,
-    >,
+    custom_owner_edit: Form<models::CustomOwnerModify>,
 ) -> rocket::response::Flash<rocket::response::Redirect> {
     trace!("post_edit_custom_owners()");
 
-    let update_result: Result<_, failure::Error> = if let Ok(custom_owner_edit) = custom_owner_edit {
-        let mut custom_owner = custom_owner_edit.into_inner();
-        custom_owner.custom_owner_name = custom_owner.custom_owner_name.to_lowercase();
-        custom_owner.recipient = custom_owner.recipient.to_lowercase();
-        if let Err(errors) = custom_owner.validate() {
-            let errors = errors.field_errors();
-            let msg = match find_first_validation_message(&errors) {
-                Some(m) => m,
-                None => "Failed to parse form data",
-            };
-            return rocket::response::Flash::error(
-                rocket::response::Redirect::to("/editCustomOwners"),
-                msg,
-            );
-        }
-        database::edit_custom_owner(&*config, &*database, &custom_owner)
-    } else {
+    let mut custom_owner = custom_owner_edit.into_inner();
+    custom_owner.custom_owner_name = custom_owner.custom_owner_name.to_lowercase();
+    custom_owner.recipient = custom_owner.recipient.to_lowercase();
+    if let Err(errors) = custom_owner.validate() {
+        let errors = errors.field_errors();
+        let msg = match find_first_validation_message(&errors) {
+            Some(m) => m,
+            None => "Failed to parse form data",
+        };
         return rocket::response::Flash::error(
             rocket::response::Redirect::to("/editCustomOwners"),
-            "Failed to parse form data",
+            msg,
         );
-    };
+    }
+    let update_result = database::edit_custom_owner(&*config, &*database, &custom_owner);
 
     match update_result {
         Ok(0) | Err(_) => rocket::response::Flash::error(
@@ -924,24 +874,6 @@ pub fn post_edit_custom_owners(
             "Successfully updated custom_owner",
         ),
     }
-}
-
-pub fn rocket(config: utils::types::Settings) -> Result<rocket::Rocket, failure::Error> {
-    let mut rocket_builder =
-        rocket::config::Config::build(rocket::config::Environment::Production).port(config.port);
-
-    if let Some(ref template_dir) = config.template_dir {
-        rocket_builder = rocket_builder.extra("template_dir", template_dir.as_ref());
-    }
-
-    let rocket_config = rocket_builder.finalize()?;
-
-    Ok(rocket::custom(rocket_config)
-        .manage(pool::init_pool(&config))
-        .manage(config)
-        .attach(rocket_contrib::templates::Template::fairing())
-        .mount("/", html_routes())
-        .mount("/api/", api_routes()))
 }
 
 type ValidationErrorsInner =
